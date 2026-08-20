@@ -39,6 +39,7 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 	const tracker = new SpeedTracker(config);
 
 	let workTimer: ReturnType<typeof setInterval> | undefined;
+	
 
 	function stopWorkTimer() {
 		if (workTimer) clearInterval(workTimer);
@@ -215,7 +216,9 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 	pi.on("agent_end", (_event, ctx) => {
 		tracker.stopMessage();
 		stopWorkTimer();
-		if (ctx.hasUI) ctx.ui.setWorkingMessage();
+		if (ctx.hasUI) {
+			ctx.ui.setWorkingMessage();
+		}
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
