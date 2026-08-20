@@ -234,6 +234,14 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 		requestRender?.();
 	}
 
+	// 循环切换 footer 位置（right → line → off），off 时还原 pi 内置 footer
+	function toggleFooterPosition(ctx: ExtensionContext): void {
+		const order = ["right", "line", "off"] as const;
+		const next = order[(order.indexOf(config.footerPosition) + 1) % order.length];
+		commit({ ...config, footerPosition: next });
+		setupFooter(ctx);
+	}
+
 	// ---- 命令 ----
 	// 无参数 → 交互式设置面板；子命令：working / position / stats / toggle
 	pi.registerCommand("pi-token-speed", {
@@ -263,11 +271,8 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 		}
 
 		if (cmd === "position") {
-			const order = ["right", "line", "off"] as const;
-			const next = order[(order.indexOf(config.footerPosition) + 1) % order.length];
-			commit({ ...config, footerPosition: next });
-			setupFooter(extCtx);
-			ctx.ui.notify(`pi-token-speed footer position: ${next}`, "info");
+			toggleFooterPosition(extCtx);
+			ctx.ui.notify(`pi-token-speed footer position: ${config.footerPosition}`, "info");
 			return;
 		}
 
@@ -322,10 +327,8 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 				continue;
 			}
 			if (choice.startsWith("Footer 位置")) {
-				const order = ["right", "line", "off"] as const;
-				const next = order[(order.indexOf(config.footerPosition) + 1) % order.length];
-				commit({ ...config, footerPosition: next });
-				setupFooter(extCtx);
+				toggleFooterPosition(extCtx);
+				ctx.ui.notify(`pi-token-speed footer position: ${config.footerPosition}`, "info");
 				continue;
 			}
 			if (choice.startsWith("Footer 前缀")) {
