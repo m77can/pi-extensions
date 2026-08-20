@@ -1,6 +1,15 @@
 MIT License
 
-Copyright (c) 2026 The pi-extensions contributors
+Copyright (c) 2026 pi-extensions contributors
+Copyright (c) 2026 pi-open-tui contributors
+
+This project incorporates functionality derived from the following MIT-licensed
+projects:
+  - pi-open-tui (https://github.com/OldSuns/pi-open-tui)
+  - pi-haiku (https://github.com/nnocte/pi-haiku)
+  - pi-claude-code-tui (https://github.com/Phoobobo/pi-claude-code-tui)
+  - pi-zentui (https://github.com/lmilojevicc/pi-zentui)
+  - pi-tps (https://github.com/monotykamary/pi-tps)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

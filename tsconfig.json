@@ -6,10 +6,11 @@
 		"strict": true,
 		"noEmit": true,
 		"skipLibCheck": true,
-		"allowImportingTsExtensions": false,
-		"verbatimModuleSyntax": false,
+		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
+		"allowImportingTsExtensions": true,
+		"lib": ["ES2022"],
 		"types": ["node"]
 	},
-	"include": ["index.ts", "src/**/*.ts"]
+	"include": ["shared/**/*.ts", "extensions/**/*.ts", "pi-router-spec/**/*.ts", "tests/**/*.ts"]
 }

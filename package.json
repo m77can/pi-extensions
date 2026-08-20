@@ -1,23 +1,54 @@
 {
 	"name": "pi-extensions",
-	"version": "0.1.0",
-	"description": "A collection of pi extensions, installed as a single git package.",
+	"version": "0.2.0",
+	"description": "A modular TUI and tool collection for Pi: header, editor, footer, live speed, telemetry, settings, and router-spec.",
 	"type": "module",
 	"license": "MIT",
 	"keywords": [
 		"pi-package",
 		"pi-extension",
-		"pi"
+		"pi",
+		"tui",
+		"starship",
+		"theme"
 	],
+	"files": [
+		"shared/",
+		"extensions/",
+		"pi-router-spec/",
+		"README.md",
+		"LICENSE"
+	],
+	"scripts": {
+		"test": "node --test tests/*.test.ts tests/*.test.js",
+		"typecheck": "tsc --noEmit"
+	},
 	"pi": {
 		"extensions": [
-			"./pi-router-spec/index.ts",
-			"./pi-token-speed/index.ts"
+			"./extensions/pi-header/index.ts",
+			"./extensions/pi-editor/index.ts",
+			"./extensions/pi-footer/index.ts",
+			"./extensions/pi-speed/index.ts",
+			"./extensions/pi-telemetry/index.ts",
+			"./extensions/pi-settings/index.ts",
+			"./pi-router-spec/index.ts"
 		]
 	},
 	"peerDependencies": {
-		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": ">=0.80",
+		"@earendil-works/pi-ai": ">=0.80",
+		"@earendil-works/pi-tui": ">=0.80"
+	},
+	"peerDependenciesMeta": {
+		"@earendil-works/pi-coding-agent": { "optional": true },
+		"@earendil-works/pi-ai": { "optional": true },
+		"@earendil-works/pi-tui": { "optional": true }
+	},
+	"devDependencies": {
 		"@earendil-works/pi-coding-agent": "*",
-		"@earendil-works/pi-tui": "*"
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-tui": "*",
+		"@types/node": "^22.0.0",
+		"typescript": "^5.5.0"
 	}
 }
