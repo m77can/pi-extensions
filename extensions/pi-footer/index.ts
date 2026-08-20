@@ -54,6 +54,7 @@ import {
 	subscribeConfig,
 	setRequestFooterRender,
 	requestFooterRender,
+	getSpeedTracker,
 } from "../../shared/pi-tui-store.js";
 import { SpeedTracker } from "../../shared/speed-tracker.js";
 
@@ -430,7 +431,9 @@ export function installFooter(
 export default function piFooter(pi: ExtensionAPI): void {
 	const sessionLifecycle = new SessionLifecycle();
 	const state: FooterState = createInitialState();
-	const tracker = new SpeedTracker(getConfig().speed);
+	// Shared speed engine from the global store — pi-speed feeds it (data owner);
+	// this module only reads sessionAvgTokS() for the footer segment.
+	const tracker = getSpeedTracker();
 
 	let active = false;
 	let lastCtx: ExtensionContext | undefined;
@@ -529,7 +532,7 @@ export default function piFooter(pi: ExtensionAPI): void {
 		state.workingSince = undefined;
 		state.lastDoneIn = undefined;
 		invalidateUsageCache();
-		tracker.resetSession();
+		// Speed data lifecycle (resetSession) is owned by the pi-speed module.
 		setupFooter(ctx);
 		if (isTuiContext(ctx)) {
 			void scheduleGitRefresh(ctx);
@@ -554,7 +557,6 @@ export default function piFooter(pi: ExtensionAPI): void {
 	pi.on("agent_end", (_event, ctx) => {
 		if (!sessionLifecycle.isCurrent()) return;
 		stopWorkingTimer();
-		tracker.stopMessage();
 		if (state.workingSince !== undefined) {
 			state.lastDoneIn = Date.now() - state.workingSince;
 			state.workingSince = undefined;
@@ -562,44 +564,14 @@ export default function piFooter(pi: ExtensionAPI): void {
 		requestFooterRender();
 	});
 
-	pi.on("message_start", (event) => {
+	pi.on("message_end", () => {
 		if (!sessionLifecycle.isCurrent()) return;
-		if (event.message?.role !== "assistant") return;
-		tracker.startMessage();
-	});
-
-	pi.on("message_update", (event) => {
-		if (!sessionLifecycle.isCurrent()) return;
-		if (event.message?.role !== "assistant") return;
-		if (!tracker.isStreaming) return;
-		const ev = event.assistantMessageEvent as
-			| {
-					type?: string;
-					delta?: string;
-					partial?: { usage?: { output?: number } };
-			  }
-			| undefined;
-		if (!ev) return;
-		if (ev.type === "text_delta" || ev.type === "thinking_delta") {
-			tracker.recordDelta(ev.delta ?? "", ev.partial?.usage?.output);
-		}
-	});
-
-	pi.on("message_end", (event, ctx) => {
-		if (!sessionLifecycle.isCurrent()) return;
-		if (event.message?.role !== "assistant") return;
-		const usageOutput =
-			typeof event.message.usage === "object" && event.message.usage !== null
-				? ((event.message.usage as { output?: number }).output ?? 0)
-				: 0;
-		const stopReason = (event.message as { stopReason?: string }).stopReason;
-		tracker.finishMessage(usageOutput, stopReason);
 		invalidateUsageCache();
 		requestFooterRender();
 	});
 
 	pi.on("turn_end", () => {
 		if (!sessionLifecycle.isCurrent()) return;
-		tracker.stopMessage();
+		// Speed data lifecycle (stopMessage) is owned by the pi-speed module.
 	});
 }

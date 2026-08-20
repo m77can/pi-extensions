@@ -12,17 +12,22 @@ import {
 	saveConfig,
 	type PiTuiConfig,
 } from "./config.js";
+import { SpeedTracker } from "./speed-tracker.js";
 
 const STORE_KEY = Symbol.for("pi-tui.store");
 
 interface PiTuiStore {
 	config: PiTuiConfig;
+	/** Single shared speed engine. pi-speed feeds it (data owner); pi-footer only reads sessionAvgTokS(). */
+	speedTracker: SpeedTracker;
 	subscribers: Set<() => void>;
 	requestFooterRender: (() => void) | undefined;
-	editorControls: {
-		setCursorStyle: (style: PiTuiConfig["cursorStyle"]) => void;
-		setWheelScrollLines: (lines: number) => void;
-	} | undefined;
+	editorControls:
+		| {
+				setCursorStyle: (style: PiTuiConfig["cursorStyle"]) => void;
+				setWheelScrollLines: (lines: number) => void;
+		  }
+		| undefined;
 }
 
 type GlobalWithStore = typeof globalThis & { [STORE_KEY]?: PiTuiStore };
@@ -31,8 +36,10 @@ function initStore(): PiTuiStore {
 	const g = globalThis as GlobalWithStore;
 	if (g[STORE_KEY]) return g[STORE_KEY];
 	ensureConfigExists();
+	const config = loadConfig();
 	const store: PiTuiStore = {
-		config: loadConfig(),
+		config,
+		speedTracker: new SpeedTracker(config.speed),
 		subscribers: new Set(),
 		requestFooterRender: undefined,
 		editorControls: undefined,
@@ -43,6 +50,10 @@ function initStore(): PiTuiStore {
 
 export function getConfig(): PiTuiConfig {
 	return initStore().config;
+}
+
+export function getSpeedTracker(): SpeedTracker {
+	return initStore().speedTracker;
 }
 
 export function subscribeConfig(fn: () => void): () => void {
@@ -74,7 +85,9 @@ export function requestFooterRender(): void {
 	initStore().requestFooterRender?.();
 }
 
-export function setEditorControls(controls: PiTuiStore["editorControls"]): void {
+export function setEditorControls(
+	controls: PiTuiStore["editorControls"],
+): void {
 	initStore().editorControls = controls;
 }
 

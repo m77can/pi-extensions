@@ -2,8 +2,7 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { getConfig, subscribeConfig } from "../../shared/pi-tui-store.js";
-import { SpeedTracker } from "../../shared/speed-tracker.js";
+import { getConfig, subscribeConfig, getSpeedTracker } from "../../shared/pi-tui-store.js";
 
 /**
  * pi-speed — live output token speed (tok/s) in the streaming working indicator.
@@ -11,13 +10,12 @@ import { SpeedTracker } from "../../shared/speed-tracker.js";
  * Sole owner of `ctx.ui.setWorkingMessage()`; never touches the footer. The
  * session-average speed is rendered by the pi-footer module instead.
  *
- * Live speed uses the sliding-window SpeedTracker shared engine with the same
- * guardrails (min reliable duration, max plausible speed) as the former
- * pi-token-speed package.
+ * Live speed uses the shared SpeedTracker from the global store (this module is
+ * the data owner: it feeds stream deltas; pi-footer only reads sessionAvgTokS).
  */
 
-// Own SpeedTracker instance; live speed belongs only to this module.
-const tracker = new SpeedTracker({ ...getConfig().speed });
+// Shared engine from the global store — single source of truth for speed.
+const tracker = getSpeedTracker();
 
 function isTuiContext(ctx: ExtensionContext): boolean {
 	try {
@@ -79,13 +77,21 @@ export default function piSpeed(pi: ExtensionAPI): void {
 	}
 
 	// ---- events ----
+	// Data layer: feed the shared tracker for BOTH live speed (this module) and
+	// the footer session-average (pi-footer reads sessionAvgTokS). Feeding is
+	// gated only by the global `enabled` and the speed capability `speed.enabled`,
+	// NOT by display switches (modules.speed / speed.working), so hiding the
+	// working indicator never starves the footer's session-average segment.
+	// Display layer (renderWorking/startWorkTimer) is gated by modules.speed +
+	// speed.working below.
+
 	pi.on("session_start", async () => {
 		tracker.resetSession();
 	});
 
 	pi.on("message_start", (event, ctx) => {
 		const config = getConfig();
-		if (!config.enabled || !config.modules.speed || !config.speed.enabled) return;
+		if (!config.enabled || !config.speed.enabled) return;
 		if (event.message?.role !== "assistant") return;
 		tracker.startMessage();
 		renderWorking(ctx, tracker.lastTokS ?? tracker.liveTokS());
@@ -94,7 +100,7 @@ export default function piSpeed(pi: ExtensionAPI): void {
 
 	pi.on("message_update", (event, ctx) => {
 		const config = getConfig();
-		if (!config.enabled || !config.modules.speed || !config.speed.enabled) return;
+		if (!config.enabled || !config.speed.enabled) return;
 		if (event.message?.role !== "assistant") return;
 		if (!tracker.isStreaming) return;
 		const ev = event.assistantMessageEvent as
@@ -113,7 +119,7 @@ export default function piSpeed(pi: ExtensionAPI): void {
 
 	pi.on("message_end", (event, ctx) => {
 		const config = getConfig();
-		if (!config.enabled || !config.modules.speed || !config.speed.enabled) return;
+		if (!config.enabled || !config.speed.enabled) return;
 		if (event.message?.role !== "assistant") return;
 		const usageOutput =
 			typeof event.message.usage === "object" && event.message.usage !== null

@@ -136,7 +136,11 @@ function deepMerge<T>(base: T, override: unknown): T {
 	if (typeof base !== "object" || base === null || Array.isArray(base)) {
 		return (override as T) ?? base;
 	}
-	if (typeof override !== "object" || override === null || Array.isArray(override)) {
+	if (
+		typeof override !== "object" ||
+		override === null ||
+		Array.isArray(override)
+	) {
 		return base;
 	}
 	const result = { ...(base as Record<string, unknown>) };
@@ -164,7 +168,11 @@ function normalizeConfig(config: PiTuiConfig): PiTuiConfig {
 	if (config.settingsLanguage !== "en" && config.settingsLanguage !== "zh") {
 		config.settingsLanguage = DEFAULT_CONFIG.settingsLanguage;
 	}
-	if (config.cursorStyle !== "block" && config.cursorStyle !== "bar" && config.cursorStyle !== "underline") {
+	if (
+		config.cursorStyle !== "block" &&
+		config.cursorStyle !== "bar" &&
+		config.cursorStyle !== "underline"
+	) {
 		config.cursorStyle = DEFAULT_CONFIG.cursorStyle;
 	}
 	config.fullscreen.wheelScrollLines = normalizeFullscreenWheelScrollLines(
@@ -192,7 +200,9 @@ export function ensureConfigExists(): void {
 	}
 }
 
-export function loadConfig(notify?: (msg: string, level: "warning" | "info") => void): PiTuiConfig {
+export function loadConfig(
+	notify?: (msg: string, level: "warning" | "info") => void,
+): PiTuiConfig {
 	const path = getConfigPath();
 	if (!existsSync(path)) {
 		ensureConfigExists();
@@ -204,7 +214,10 @@ export function loadConfig(notify?: (msg: string, level: "warning" | "info") => 
 		const merged = deepMerge(DEFAULT_CONFIG, parsed);
 		return normalizeConfig(merged);
 	} catch (err) {
-		notify?.(`pi-tui config parse error: ${err instanceof Error ? err.message : String(err)}`, "warning");
+		notify?.(
+			`pi-tui config parse error: ${err instanceof Error ? err.message : String(err)}`,
+			"warning",
+		);
 		return structuredClone(DEFAULT_CONFIG);
 	}
 }
