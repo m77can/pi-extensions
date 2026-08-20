@@ -44,10 +44,7 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 	}
 
 	function footerSpeed(): number | null {
-		if (tracker.isStreaming) {
-			const live = tracker.liveTokS();
-			if (live !== null && live > 0) return live;
-		}
+		// footer 恒显示会话平均（session avg），瞬时只出现在 working 指示器
 		return tracker.sessionAvgTokS();
 	}
 
@@ -227,12 +224,13 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 	});
 
 	// ---- 命令 ----
+	// 无参数 → 交互式设置面板；子命令：working / position / stats / toggle
 	pi.registerCommand("pi-token-speed", {
 		description:
-			"Configure pi-token-speed: [none] toggle on/off, working toggle working indicator, position cycle footer position, stats show stats",
+			"pi-token-speed 设置面板；子命令: working / position / stats",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const [cmdRaw] = String(args ?? "").trim().split(/\s+/).filter(Boolean);
-			const cmd = cmdRaw ?? "toggle";
+			const cmd = cmdRaw ?? "";
 			const extCtx = ctx as unknown as ExtensionContext;
 
 			if (cmd === "stats") {
@@ -240,28 +238,31 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 				const last = tracker.lastTokS;
 				ctx.ui.notify(
 					`pi-token-speed — session avg: ${avg === null ? "--" : `${avg.toFixed(1)} tok/s`}, last message: ${last === null ? "--" : `${last.toFixed(1)} tok/s`}, window: ${config.slidingWindowMs}ms, footer: ${config.footerPosition}`,
-					"info",
+				"info",
 				);
 				return;
 			}
-			if (cmd === "working") {
-				store.update({ ...config, working: !config.working });
-				Object.assign(config, store.current);
-				if (!config.working && ctx.hasUI) ctx.ui.setWorkingMessage();
-				else renderWorking(extCtx, tracker.lastTokS);
-				ctx.ui.notify(`pi-token-speed working display: ${config.working ? "on" : "off"}`, "info");
-				return;
-			}
-			if (cmd === "position") {
-				const order = ["right", "line", "off"] as const;
-				const next = order[(order.indexOf(config.footerPosition) + 1) % order.length];
-				store.update({ ...config, footerPosition: next });
-				Object.assign(config, store.current);
-				setupFooter(extCtx);
-				ctx.ui.notify(`pi-token-speed footer position: ${next}`, "info");
-				return;
-			}
-			// toggle enabled
+
+		if (cmd === "working") {
+			store.update({ ...config, working: !config.working });
+			Object.assign(config, store.current);
+			if (!config.working && ctx.hasUI) ctx.ui.setWorkingMessage();
+			else renderWorking(extCtx, tracker.lastTokS);
+			ctx.ui.notify(`pi-token-speed working display: ${config.working ? "on" : "off"}`, "info");
+			return;
+		}
+
+		if (cmd === "position") {
+			const order = ["right", "line", "off"] as const;
+			const next = order[(order.indexOf(config.footerPosition) + 1) % order.length];
+			store.update({ ...config, footerPosition: next });
+			Object.assign(config, store.current);
+			setupFooter(extCtx);
+			ctx.ui.notify(`pi-token-speed footer position: ${next}`, "info");
+			return;
+		}
+
+		if (cmd === "toggle") {
 			store.update({ ...config, enabled: !config.enabled });
 			Object.assign(config, store.current);
 			if (!config.enabled) {
@@ -274,7 +275,75 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 				setupFooter(extCtx);
 			}
 			ctx.ui.notify(`pi-token-speed ${config.enabled ? "enabled" : "disabled"}`, "info");
-		},
+			return;
+		}
+
+		// 无参数 → 交互式设置面板（循环选择直到取消）
+		while (true) {
+			const posLabel = (p: string) =>
+				p === "right" ? "右侧对齐" : p === "line" ? "独立行" : "关闭";
+			const choice = await ctx.ui.select(
+				`⚡ pi-token-speed 设置 (当前: ${config.enabled ? "开" : "关"})`,
+				[
+					`总开关: ${config.enabled ? "✅ 开" : "❌ 关"}`,
+					`工作指示器: ${config.working ? "✅ 开" : "❌ 关"}`,
+					`Footer 位置: ${posLabel(config.footerPosition)}`,
+					`Footer 前缀: ${config.label}`,
+					`统计窗口: ${config.slidingWindowMs}ms`,
+					"-- 退出设置 --",
+				],
+			);
+			if (!choice || choice.startsWith("--")) return;
+
+			if (choice.startsWith("总开关")) {
+				store.update({ ...config, enabled: !config.enabled });
+				Object.assign(config, store.current);
+				if (!config.enabled) {
+					stopWorkTimer();
+					if (ctx.hasUI) {
+						ctx.ui.setFooter(undefined);
+						ctx.ui.setWorkingMessage();
+					}
+				} else {
+					setupFooter(extCtx);
+				}
+				continue;
+			}
+			if (choice.startsWith("工作指示器")) {
+				store.update({ ...config, working: !config.working });
+				Object.assign(config, store.current);
+				if (!config.working && ctx.hasUI) ctx.ui.setWorkingMessage();
+				continue;
+			}
+			if (choice.startsWith("Footer 位置")) {
+				const order = ["right", "line", "off"] as const;
+				const next = order[(order.indexOf(config.footerPosition) + 1) % order.length];
+				store.update({ ...config, footerPosition: next });
+				Object.assign(config, store.current);
+				setupFooter(extCtx);
+				continue;
+			}
+			if (choice.startsWith("Footer 前缀")) {
+				const value = await ctx.ui.input("速度标签（如 tok/s）", config.label);
+				if (value && value.trim()) {
+					store.update({ ...config, label: value.trim() });
+					Object.assign(config, store.current);
+				}
+				continue;
+			}
+			if (choice.startsWith("统计窗口")) {
+				const value = await ctx.ui.input("滑动窗口 ms（如 1000）", String(config.slidingWindowMs));
+				if (value) {
+					const ms = Number(value.trim());
+					if (Number.isFinite(ms) && ms > 0) {
+						store.update({ ...config, slidingWindowMs: ms });
+						Object.assign(config, store.current);
+					}
+				}
+				continue;
+			}
+		}
+	},
 	});
 }
 export { STATE_SUFFIX };
