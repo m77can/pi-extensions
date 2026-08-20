@@ -1,19 +1,35 @@
+/**
+ * Config schema, normalization, and file persistence for pi-token-speed.
+ *
+ * The config file lives at ~/.pi/agent/pi-token-speed.json:
+ *
+ * {
+ *   "version": 1,
+ *   "config": { ...Config }
+ * }
+ *
+ * Every update() call persists immediately, so settings survive /reload.
+ */
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+
+export type FooterPosition = "right" | "line" | "off";
+
 export type Config = {
 	enabled: boolean;
 	footer: boolean;
 	working: boolean;
-	/** footer 位置: "right" 右对齐到 footer 右侧, "line" 作为独立行追加在 footer 底部, "off" 不显示 footer */
-	footerPosition: "right" | "line" | "off";
+	/** "right" = right-aligned on the stats line, "line" = own line at the bottom, "off" = restore pi's built-in footer. */
+	footerPosition: FooterPosition;
 	label: string;
-	footerPrefix: string;
 	workingPrefix: string;
-	/** Interval at which the footer status is refreshed while streaming (ms). */
+	/** Interval at which the working indicator refreshes while streaming (ms). */
 	renderIntervalMs: number;
 	/** Sliding-window length for live tok/s (ms). */
 	slidingWindowMs: number;
 	/** Minimum message duration before a speed reading is considered reliable (ms). */
 	minReliableDurationMs: number;
-	/** Speeds above this (tok/s) are treated as invalid. */
+	/** Speeds above this tok/s are treated as invalid. */
 	maxDisplayTokS: number;
 	/** Prefer the provider's usage.output deltas over text estimation. */
 	useProviderTokens: boolean;
@@ -27,7 +43,6 @@ export const DEFAULT_CONFIG: Config = {
 	working: true,
 	footerPosition: "right",
 	label: "tok/s",
-	footerPrefix: "",
 	workingPrefix: "Working...",
 	renderIntervalMs: 250,
 	slidingWindowMs: 1000,
@@ -55,17 +70,10 @@ function normalize(raw: unknown): Config {
 		enabled: typeof config.enabled === "boolean" ? config.enabled : DEFAULT_CONFIG.enabled,
 		footer: typeof config.footer === "boolean" ? config.footer : DEFAULT_CONFIG.footer,
 		working: typeof config.working === "boolean" ? config.working : DEFAULT_CONFIG.working,
-		footerPosition:
-			config.footerPosition === "right" ||
-			config.footerPosition === "line" ||
-			config.footerPosition === "off"
-				? config.footerPosition
-				: DEFAULT_CONFIG.footerPosition,
+		footerPosition: isFooterPosition(config.footerPosition)
+			? config.footerPosition
+			: DEFAULT_CONFIG.footerPosition,
 		label: typeof config.label === "string" && config.label ? config.label : DEFAULT_CONFIG.label,
-		footerPrefix:
-			typeof config.footerPrefix === "string" && config.footerPrefix
-				? config.footerPrefix
-				: DEFAULT_CONFIG.footerPrefix,
 		workingPrefix:
 			typeof config.workingPrefix === "string" && config.workingPrefix
 				? config.workingPrefix
@@ -88,6 +96,10 @@ function normalize(raw: unknown): Config {
 	};
 }
 
+function isFooterPosition(value: unknown): value is FooterPosition {
+	return value === "right" || value === "line" || value === "off";
+}
+
 function numberOr(value: unknown, fallback: number): number {
 	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 }
@@ -106,22 +118,22 @@ export class ConfigStore {
 		return this.config;
 	}
 
+	/** Persist the config to disk immediately, so changes survive /reload. */
 	update(next: Config): void {
 		this.config = normalize(next);
-	}
-
-	enabled(): boolean {
-		return this.config.enabled;
-	}
-
-	engineOptions() {
-		return { ...this.config };
+		const file: ConfigFile = { version: 1, config: this.config };
+		try {
+			mkdirSync(dirname(this.jsonPath), { recursive: true });
+			writeFileSync(this.jsonPath, `${JSON.stringify(file, null, 2)}\n`, "utf8");
+		} catch {
+			// Disk persistence is best-effort; in-memory config still applies.
+		}
 	}
 }
 
 function readJson(path: string): unknown {
 	try {
-		return JSON.parse(require("node:fs").readFileSync(path, "utf8"));
+		return JSON.parse(readFileSync(path, "utf8"));
 	} catch {
 		return undefined;
 	}

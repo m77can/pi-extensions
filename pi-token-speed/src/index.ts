@@ -5,14 +5,16 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 /**
- * pi-token-speed —— pi 扩展：实时输出 token 速度（tok/s）
+ * pi-token-speed — live output token speed (tok/s) for pi.
  *
- * - 流式期间从 assistantMessageEvent 的 text/thinking delta 累计 token，
- *   优先使用 provider 报告的 usage.output 增量。
- * - 瞬时速度用滑动窗口（默认 1s）估算，带最短时长/最大速度消毒护栏。
- * - 两个展示位都可在 config 中开关：
- *   - working: 流式时的 Working 指示器（默认开）
- *   - footer: 底部 footer 速度（默认开，footerPosition: right/line/off 控制位置）
+ * - During streaming, tokens are accumulated from assistantMessageEvent
+ *   text/thinking deltas, preferring the provider's usage.output deltas.
+ * - Live speed uses a sliding window (default 1s) with guardrails
+ *   (min reliable duration, max plausible speed).
+ * - Two display slots, both configurable:
+ *   - working: live speed in the streaming working indicator (on by default)
+ *   - footer: session-average speed in a custom footer (on by default,
+ *     footerPosition: right/line/off)
  */
 
 const STATUS_ID = "pi-token-speed";
@@ -44,11 +46,11 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 	}
 
 	function footerSpeed(): number | null {
-		// footer 恒显示会话平均（session avg），瞬时只出现在 working 指示器
+		// Footer always shows the session average; live speed belongs to the working indicator.
 		return tracker.sessionAvgTokS();
 	}
 
-	// ---- working 指示器 ----
+	// ---- working indicator ----
 	function renderWorking(ctx: ExtensionContext, speed: number | null) {
 		if (!ctx.hasUI) return;
 		if (!config.enabled || !config.working) {
@@ -72,7 +74,7 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 		}, config.renderIntervalMs);
 	}
 
-	// ---- 自定义 footer（保留 pi 内置统计行 + 速度右对齐/独立行）----
+	// ---- custom footer (pi token stats line + right-aligned or separate-line speed) ----
 	let requestRender: (() => void) | undefined;
 
 	function setupFooter(ctx: ExtensionContext) {
@@ -128,7 +130,7 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 					}
 					const statsLeft = theme.fg("dim", statsParts.join(" "));
 
-					// 右侧：model (+ thinking) + 速度
+					// Right side: model (+ thinking level) + speed
 					const modelName = ctx.model?.id || "no-model";
 					const thinkingLevel = (
 						ctx as unknown as { thinkingLevel?: string | null }
@@ -152,10 +154,7 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 						const pad = " ".repeat(width - leftWidth - rightWidth);
 						return [truncateToWidth(`${statsLeft}${pad}${rightSide}`, width, "")];
 					}
-					return [
-						statsLeft,
-						truncateToWidth(`${speedStr}`, width, ""),
-					];
+					return [statsLeft, truncateToWidth(`${speedStr}`, width, "")];
 				},
 			};
 		});
@@ -227,14 +226,14 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 		}
 	});
 
-	// 提交设置后主动重绘 footer，否则 render() 不会马上跑、看着像没生效
+	// Apply a config change: persist it, then re-render the custom footer immediately.
 	function commit(next: Config): void {
 		store.update(next);
 		Object.assign(config, store.current);
 		requestRender?.();
 	}
 
-	// 循环切换 footer 位置（right → line → off），off 时还原 pi 内置 footer
+	// Cycle footer position: right → line → off. "off" restores pi's built-in footer.
 	function toggleFooterPosition(ctx: ExtensionContext): void {
 		const order = ["right", "line", "off"] as const;
 		const next = order[(order.indexOf(config.footerPosition) + 1) % order.length];
@@ -242,11 +241,11 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 		setupFooter(ctx);
 	}
 
-	// ---- 命令 ----
-	// 无参数 → 交互式设置面板；子命令：working / position / stats / toggle
+	// ---- commands ----
+	// No argument opens the interactive settings panel.
+	// Subcommands: working / position / stats / toggle
 	pi.registerCommand("pi-token-speed", {
-		description:
-			"pi-token-speed 设置面板；子命令: working / position / stats",
+		description: "pi-token-speed settings panel; subcommands: working / position / stats",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			const [cmdRaw] = String(args ?? "").trim().split(/\s+/).filter(Boolean);
 			const cmd = cmdRaw ?? "";
@@ -257,58 +256,26 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 				const last = tracker.lastTokS;
 				ctx.ui.notify(
 					`pi-token-speed — session avg: ${avg === null ? "--" : `${avg.toFixed(1)} tok/s`}, last message: ${last === null ? "--" : `${last.toFixed(1)} tok/s`}, window: ${config.slidingWindowMs}ms, footer: ${config.footerPosition}`,
-				"info",
+					"info",
 				);
 				return;
 			}
 
-		if (cmd === "working") {
-			commit({ ...config, working: !config.working });
-			if (!config.working && ctx.hasUI) ctx.ui.setWorkingMessage();
-			else renderWorking(extCtx, tracker.lastTokS);
-			ctx.ui.notify(`pi-token-speed working display: ${config.working ? "on" : "off"}`, "info");
-			return;
-		}
-
-		if (cmd === "position") {
-			toggleFooterPosition(extCtx);
-			ctx.ui.notify(`pi-token-speed footer position: ${config.footerPosition}`, "info");
-			return;
-		}
-
-		if (cmd === "toggle") {
-			commit({ ...config, enabled: !config.enabled });
-			if (!config.enabled) {
-				stopWorkTimer();
-				if (ctx.hasUI) {
-					ctx.ui.setFooter(undefined);
-					ctx.ui.setWorkingMessage();
-				}
-			} else {
-				setupFooter(extCtx);
+			if (cmd === "working") {
+				commit({ ...config, working: !config.working });
+				if (!config.working && ctx.hasUI) ctx.ui.setWorkingMessage();
+				else renderWorking(extCtx, tracker.lastTokS);
+				ctx.ui.notify(`pi-token-speed working display: ${config.working ? "on" : "off"}`, "info");
+				return;
 			}
-			ctx.ui.notify(`pi-token-speed ${config.enabled ? "enabled" : "disabled"}`, "info");
-			return;
-		}
 
-		// 无参数 → 交互式设置面板（循环选择直到取消）
-		while (true) {
-			const posLabel = (p: string) =>
-				p === "right" ? "右侧对齐" : p === "line" ? "独立行" : "关闭";
-			const choice = await ctx.ui.select(
-				`⚡ pi-token-speed 设置 (当前: ${config.enabled ? "开" : "关"})`,
-				[
-					`总开关: ${config.enabled ? "✅ 开" : "❌ 关"}`,
-					`工作指示器: ${config.working ? "✅ 开" : "❌ 关"}`,
-					`Footer 位置: ${posLabel(config.footerPosition)}`,
-					`Footer 前缀: ${config.label}`,
-					`统计窗口: ${config.slidingWindowMs}ms`,
-					"-- 退出设置 --",
-				],
-			);
-			if (!choice || choice.startsWith("--")) return;
+			if (cmd === "position") {
+				toggleFooterPosition(extCtx);
+				ctx.ui.notify(`pi-token-speed footer position: ${config.footerPosition}`, "info");
+				return;
+			}
 
-			if (choice.startsWith("总开关")) {
+			if (cmd === "toggle") {
 				commit({ ...config, enabled: !config.enabled });
 				if (!config.enabled) {
 					stopWorkTimer();
@@ -319,37 +286,69 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 				} else {
 					setupFooter(extCtx);
 				}
-				continue;
+				ctx.ui.notify(`pi-token-speed ${config.enabled ? "enabled" : "disabled"}`, "info");
+				return;
 			}
-			if (choice.startsWith("工作指示器")) {
-				commit({ ...config, working: !config.working });
-				if (!config.working && ctx.hasUI) ctx.ui.setWorkingMessage();
-				continue;
-			}
-			if (choice.startsWith("Footer 位置")) {
-				toggleFooterPosition(extCtx);
-				ctx.ui.notify(`pi-token-speed footer position: ${config.footerPosition}`, "info");
-				continue;
-			}
-			if (choice.startsWith("Footer 前缀")) {
-				const value = await ctx.ui.input("速度标签（如 tok/s）", config.label);
-				if (value && value.trim()) {
-					commit({ ...config, label: value.trim() });
-				}
-				continue;
-			}
-			if (choice.startsWith("统计窗口")) {
-				const value = await ctx.ui.input("滑动窗口 ms（如 1000）", String(config.slidingWindowMs));
-				if (value) {
-					const ms = Number(value.trim());
-					if (Number.isFinite(ms) && ms > 0) {
-						commit({ ...config, slidingWindowMs: ms });
+
+			// No argument: interactive settings panel (loops until cancelled)
+			while (true) {
+				const posLabel = (p: string) =>
+					p === "right" ? "Right-aligned" : p === "line" ? "Own line" : "Off";
+				const choice = await ctx.ui.select(
+					`⚡ pi-token-speed settings (enabled: ${config.enabled ? "yes" : "no"})`,
+					[
+						`Enabled: ${config.enabled ? "yes" : "no"}`,
+						`Working indicator: ${config.working ? "on" : "off"}`,
+						`Footer position: ${posLabel(config.footerPosition)}`,
+						`Speed label: ${config.label}`,
+						`Sliding window: ${config.slidingWindowMs}ms`,
+						"-- exit --",
+					],
+				);
+				if (!choice || choice.startsWith("--")) return;
+
+				if (choice.startsWith("Enabled:")) {
+					commit({ ...config, enabled: !config.enabled });
+					if (!config.enabled) {
+						stopWorkTimer();
+						if (ctx.hasUI) {
+							ctx.ui.setFooter(undefined);
+							ctx.ui.setWorkingMessage();
+						}
+					} else {
+						setupFooter(extCtx);
 					}
+					continue;
 				}
-				continue;
+				if (choice.startsWith("Working indicator:")) {
+					commit({ ...config, working: !config.working });
+					if (!config.working && ctx.hasUI) ctx.ui.setWorkingMessage();
+					continue;
+				}
+				if (choice.startsWith("Footer position:")) {
+					toggleFooterPosition(extCtx);
+					ctx.ui.notify(`pi-token-speed footer position: ${config.footerPosition}`, "info");
+					continue;
+				}
+				if (choice.startsWith("Speed label:")) {
+					const value = await ctx.ui.input("Speed label (e.g. tok/s)", config.label);
+					if (value && value.trim()) {
+						commit({ ...config, label: value.trim() });
+					}
+					continue;
+				}
+				if (choice.startsWith("Sliding window:")) {
+					const value = await ctx.ui.input("Sliding window ms (e.g. 1000)", String(config.slidingWindowMs));
+					if (value) {
+						const ms = Number(value.trim());
+						if (Number.isFinite(ms) && ms > 0) {
+							commit({ ...config, slidingWindowMs: ms });
+						}
+					}
+					continue;
+				}
 			}
-		}
-	},
+		},
 	});
 }
 export { STATE_SUFFIX };
