@@ -1,7 +1,7 @@
 {
 	"name": "pi-extensions",
 	"version": "0.1.0",
-	"description": "Wangsong's pi extensions, installed as a single git package.",
+	"description": "A collection of pi extensions, installed as a single git package.",
 	"type": "module",
 	"license": "MIT",
 	"keywords": [
@@ -11,10 +11,13 @@
 	],
 	"pi": {
 		"extensions": [
-			"./index.ts"
+			"./pi-router-spec/index.ts",
+			"./pi-token-speed/index.ts"
 		]
 	},
 	"peerDependencies": {
-		"@earendil-works/pi-coding-agent": "*"
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*"
 	}
 }

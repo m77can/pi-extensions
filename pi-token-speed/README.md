@@ -11,13 +11,13 @@ A pi extension that shows live model output speed (tok/s) with sliding-window es
 
 ## Install
 
-Run inside pi:
+Install as part of the pi-extensions collection:
 
 ```text
-pi install git:github.com/<your-name>/pi-token-speed
+pi install git:github.com/m77can/pi-extensions
 ```
 
-Or use locally:
+Or run standalone for development:
 
 ```text
 pi -e ./pi-token-speed
