@@ -34,7 +34,18 @@ type GlobalWithStore = typeof globalThis & { [STORE_KEY]?: PiTuiStore };
 
 function initStore(): PiTuiStore {
 	const g = globalThis as GlobalWithStore;
-	if (g[STORE_KEY]) return g[STORE_KEY];
+	const existing = g[STORE_KEY];
+	if (existing) {
+		// /reload keeps the process alive, so globalThis persists. A store
+		// created by an older version of this file may be missing newer fields
+		// (e.g. `speedTracker`). Backfill them instead of returning a store
+		// that short-circuits `getSpeedTracker()` to undefined.
+		if (!existing.speedTracker) {
+			existing.speedTracker = new SpeedTracker(existing.config.speed);
+		}
+		if (!existing.subscribers) existing.subscribers = new Set();
+		return existing;
+	}
 	ensureConfigExists();
 	const config = loadConfig();
 	const store: PiTuiStore = {

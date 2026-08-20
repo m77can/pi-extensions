@@ -2,7 +2,11 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { getConfig, subscribeConfig, getSpeedTracker } from "../../shared/pi-tui-store.js";
+import {
+	getConfig,
+	subscribeConfig,
+	getSpeedTracker,
+} from "../../shared/pi-tui-store.js";
 
 /**
  * pi-speed — live output token speed (tok/s) in the streaming working indicator.
