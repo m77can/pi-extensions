@@ -110,7 +110,7 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 			};
 
 			const speedText = (speed: number | null) =>
-				`${theme.fg("accent", formatSpeed(config.label, speed))}`;
+				`${theme.fg("accent", `avg ${formatSpeed(config.label, speed)}`)}`;
 
 			return {
 				dispose: unsub,
