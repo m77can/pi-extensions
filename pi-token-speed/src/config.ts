@@ -65,7 +65,12 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function normalize(raw: unknown): Config {
 	const input = asRecord(raw);
-	const config = asRecord(input.config);
+	// The plain (top-level) shape: load() receives the file structure
+	// with a nested "config" object. update() receives a flat Config.
+	// Use the nested shape when present, otherwise use the input itself.
+	const config = asRecord(
+		input.config !== undefined && input.config !== null ? input.config : input
+	);
 	return {
 		enabled: typeof config.enabled === "boolean" ? config.enabled : DEFAULT_CONFIG.enabled,
 		footer: typeof config.footer === "boolean" ? config.footer : DEFAULT_CONFIG.footer,
@@ -106,8 +111,11 @@ function numberOr(value: unknown, fallback: number): number {
 
 export class ConfigStore {
 	private config = { ...DEFAULT_CONFIG };
+	private jsonPath: string;
 
-	constructor(private jsonPath: string) {}
+	constructor(jsonPath: string) {
+		this.jsonPath = jsonPath;
+	}
 
 	load(): Config {
 		this.config = normalize(readJson(this.jsonPath));
