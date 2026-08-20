@@ -2,6 +2,8 @@ export type Config = {
 	enabled: boolean;
 	footer: boolean;
 	working: boolean;
+	/** footer 位置: "right" 右对齐到 footer 右侧, "line" 作为独立行追加在 footer 底部, "off" 不显示 footer */
+	footerPosition: "right" | "line" | "off";
 	label: string;
 	footerPrefix: string;
 	workingPrefix: string;
@@ -23,8 +25,9 @@ export const DEFAULT_CONFIG: Config = {
 	enabled: true,
 	footer: true,
 	working: true,
+	footerPosition: "right",
 	label: "tok/s",
-	footerPrefix: "session avg",
+	footerPrefix: "",
 	workingPrefix: "Working...",
 	renderIntervalMs: 250,
 	slidingWindowMs: 1000,
@@ -52,6 +55,12 @@ function normalize(raw: unknown): Config {
 		enabled: typeof config.enabled === "boolean" ? config.enabled : DEFAULT_CONFIG.enabled,
 		footer: typeof config.footer === "boolean" ? config.footer : DEFAULT_CONFIG.footer,
 		working: typeof config.working === "boolean" ? config.working : DEFAULT_CONFIG.working,
+		footerPosition:
+			config.footerPosition === "right" ||
+			config.footerPosition === "line" ||
+			config.footerPosition === "off"
+				? config.footerPosition
+				: DEFAULT_CONFIG.footerPosition,
 		label: typeof config.label === "string" && config.label ? config.label : DEFAULT_CONFIG.label,
 		footerPrefix:
 			typeof config.footerPrefix === "string" && config.footerPrefix

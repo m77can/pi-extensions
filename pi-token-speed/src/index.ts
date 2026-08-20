@@ -1,6 +1,8 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { ConfigStore, DEFAULT_CONFIG } from "./config.js";
 import { SpeedTracker } from "./speed-tracker.js";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 /**
  * pi-token-speed —— pi 扩展：实时输出 token 速度（tok/s）
@@ -8,119 +10,177 @@ import { SpeedTracker } from "./speed-tracker.js";
  * - 流式期间从 assistantMessageEvent 的 text/thinking delta 累计 token，
  *   优先使用 provider 报告的 usage.output 增量。
  * - 瞬时速度用滑动窗口（默认 1s）估算，带最短时长/最大速度消毒护栏。
- * - 流式速度打到 setWorkingMessage，footer 发布会话平均速度到
- *   setStatus("pi-token-speed")，供 pi-footer 等状态行扩展消费。
- *
- * 复杂度说明：单文件、无持久化 UI。文档阅读优先，写文件前说明计划；
- * 如果未来报"按钮点击怎么区分边框标题和按钮文字"，错误在 selectors 而非 UI。
+ * - 两个展示位都可在 config 中开关：
+ *   - working: 流式时的 Working 指示器（默认开）
+ *   - footer: 底部 footer 速度（默认开，footerPosition: right/line/off 控制位置）
  */
 
 const STATUS_ID = "pi-token-speed";
 const STATE_SUFFIX = "pi-token-speed-enabled";
-const store = new ConfigStore(
-	`${process.env.HOME ?? ""}/.pi/agent/pi-token-speed.json`,
-);
+const store = new ConfigStore(`${process.env.HOME ?? ""}/.pi/agent/pi-token-speed.json`);
+
+function formatTokens(count: number): string {
+	if (count < 1000) return count.toString();
+	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
+	if (count < 1000000) return `${Math.round(count / 1000)}k`;
+	if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
+	return `${Math.round(count / 1000000)}M`;
+}
 
 function formatSpeed(label: string, speed: number | null): string {
 	if (speed === null) return "--";
 	return `${speed.toFixed(1)} ${label}`;
 }
 
-function renderFooterTokS(label: string, prefix: string, speed: number | null): string {
-	const text = formatSpeed(label, speed);
-	const footerPrefix = prefix.trim();
-	return footerPrefix ? `${footerPrefix} ${text}` : text;
-}
-
-function renderWorkingTokS(label: string, prefix: string, speed: number | null): string {
-	const workingPrefix = prefix.trim();
-	const speedText = formatSpeed(label, speed);
-	return workingPrefix ? `${workingPrefix} ${speedText}` : speedText;
-}
-
 export default function piTokenSpeed(pi: ExtensionAPI): void {
 	const config = store.load();
 	const tracker = new SpeedTracker(config);
 
-	let footerTimer: ReturnType<typeof setInterval> | undefined;
-	let workingTimer: ReturnType<typeof setInterval> | undefined;
+	let workTimer: ReturnType<typeof setInterval> | undefined;
 
-	function clearTimers() {
-		if (footerTimer) clearInterval(footerTimer);
-		if (workingTimer) clearInterval(workingTimer);
-		footerTimer = undefined;
-		workingTimer = undefined;
+	function stopWorkTimer() {
+		if (workTimer) clearInterval(workTimer);
+		workTimer = undefined;
 	}
 
-	function updateStatus(ctx: ExtensionContext, speed: number | null) {
-		if (!ctx.hasUI) return;
-		if (!config.enabled || !config.footer) {
-			ctx.ui.setStatus(STATUS_ID, undefined);
-			return;
+	function footerSpeed(): number | null {
+		if (tracker.isStreaming) {
+			const live = tracker.liveTokS();
+			if (live !== null && live > 0) return live;
 		}
-		const label = config.label || DEFAULT_CONFIG.label;
-		ctx.ui.setStatus(STATUS_ID, renderFooterTokS(label, config.footerPrefix, speed));
+		return tracker.sessionAvgTokS();
 	}
 
+	// ---- working 指示器 ----
 	function renderWorking(ctx: ExtensionContext, speed: number | null) {
 		if (!ctx.hasUI) return;
 		if (!config.enabled || !config.working) {
 			ctx.ui.setWorkingMessage();
 			return;
 		}
-		const label = config.label || DEFAULT_CONFIG.label;
-		ctx.ui.setWorkingMessage(renderWorkingTokS(label, config.workingPrefix, speed));
+		const workingPrefix = config.workingPrefix.trim();
+		const text = formatSpeed(config.label, speed);
+		ctx.ui.setWorkingMessage(workingPrefix ? `${workingPrefix} ${text}` : text);
 	}
 
-	function startWorkingAnimation(ctx: ExtensionContext) {
-		if (workingTimer || !ctx.hasUI) return;
-		workingTimer = setInterval(() => {
-			if (!config.enabled) {
-				clearTimers();
-				ctx.ui.setWorkingMessage();
+	function startWorkTimer(ctx: ExtensionContext) {
+		if (workTimer || !ctx.hasUI) return;
+		workTimer = setInterval(() => {
+			if (!config.enabled || !config.working || !tracker.isStreaming) {
+				stopWorkTimer();
+				if (!config.working) ctx.ui.setWorkingMessage();
 				return;
 			}
 			renderWorking(ctx, tracker.liveTokS());
 		}, config.renderIntervalMs);
 	}
 
-	function startFooterAnimation(ctx: ExtensionContext) {
-		if (footerTimer || !ctx.hasUI) return;
-		footerTimer = setInterval(() => {
-			if (!config.enabled) {
-				clearTimers();
-				ctx.ui.setStatus(STATUS_ID, undefined);
-				return;
-			}
-			updateStatus(ctx, tracker.sessionAvgTokS());
-		}, config.renderIntervalMs);
+	// ---- 自定义 footer（保留 pi 内置统计行 + 速度右对齐/独立行）----
+	function setupFooter(ctx: ExtensionContext) {
+		if (!ctx.hasUI) return;
+		if (!config.enabled || !config.footer || config.footerPosition === "off") {
+			ctx.ui.setFooter(undefined);
+			return;
+		}
+		ctx.ui.setFooter((tui, theme, footerData) => {
+			const unsub = footerData.onBranchChange(() => tui.requestRender());
+
+			const sessionTotals = () => {
+				let input = 0,
+					output = 0,
+					cacheRead = 0,
+					cacheWrite = 0,
+					cost = 0;
+				for (const e of ctx.sessionManager.getBranch()) {
+					if (e.type === "message" && e.message.role === "assistant") {
+						const usage = (e.message as AssistantMessage).usage;
+						if (!usage) continue;
+						input += usage.input;
+						output += usage.output;
+						cacheRead += usage.cacheRead;
+						cacheWrite += usage.cacheWrite;
+						cost += usage.cost?.total ?? 0;
+					}
+				}
+				return { input, output, cacheRead, cacheWrite, cost };
+			};
+
+			const speedText = (speed: number | null) =>
+				`${theme.fg("accent", `⚡ ${formatSpeed(config.label, speed)}`)}`;
+
+			return {
+				dispose: unsub,
+				invalidate() {},
+				render(width: number): string[] {
+					const totals = sessionTotals();
+					const statsParts: string[] = [];
+					if (totals.input) statsParts.push(`↑${formatTokens(totals.input)}`);
+					if (totals.output) statsParts.push(`↓${formatTokens(totals.output)}`);
+					if (totals.cacheRead) statsParts.push(`R${formatTokens(totals.cacheRead)}`);
+					if (totals.cacheWrite) statsParts.push(`W${formatTokens(totals.cacheWrite)}`);
+					if (totals.cost) statsParts.push(`$${totals.cost.toFixed(3)}`);
+
+					const cusage = ctx.getContextUsage();
+					if (cusage) {
+						const pct = cusage.percent === null ? "?" : cusage.percent.toFixed(1);
+						statsParts.push(`${pct}%/${formatTokens(cusage.contextWindow)}`);
+					}
+					const statsLeft = theme.fg("dim", statsParts.join(" "));
+
+					// 右侧：model (+ thinking) + 速度
+					const modelName = ctx.model?.id || "no-model";
+					const thinkingLevel = (
+						ctx as unknown as { thinkingLevel?: string | null }
+					).thinkingLevel;
+					let modelRight = modelName;
+					if (ctx.model?.reasoning && thinkingLevel) {
+						modelRight =
+							thinkingLevel === "off"
+								? `${modelName} • thinking off`
+								: `${modelName} • ${thinkingLevel}`;
+					}
+					const speedStr = speedText(footerSpeed());
+					const rightSide = `${theme.fg("dim", modelRight)} ${speedStr}`;
+
+					if (config.footerPosition === "right") {
+						const leftWidth = visibleWidth(statsLeft);
+						const rightWidth = visibleWidth(rightSide);
+						if (leftWidth + rightWidth + 2 > width) {
+							return [truncateToWidth(`${statsLeft}  ${rightSide}`, width, "")];
+						}
+						const pad = " ".repeat(width - leftWidth - rightWidth);
+						return [truncateToWidth(`${statsLeft}${pad}${rightSide}`, width, "")];
+					}
+					return [
+						statsLeft,
+						truncateToWidth(`${speedStr}`, width, ""),
+					];
+				},
+			};
+		});
 	}
 
+	// ---- events ----
+	pi.on("agent_start", async (_event, ctx) => {
+		setupFooter(ctx);
+	});
+
 	pi.on("session_start", async (_event, ctx) => {
-		clearTimers();
+		stopWorkTimer();
 		store.load();
 		Object.assign(config, store.current);
 		tracker.resetSession();
-		updateStatus(ctx, null);
+		setupFooter(ctx);
 	});
 
-	pi.on("agent_start", async (_event, ctx) => {
-		if (!config.enabled) return;
-		updateStatus(ctx, null);
-	});
-
-	pi.on("turn_start", async (_event, _ctx) => {
-		// nothing; speeds are message-scoped by design
-	});
-
-	pi.on("message_start", async (event, ctx) => {
+	pi.on("message_start", (event, ctx) => {
 		if (!config.enabled || event.message?.role !== "assistant") return;
 		tracker.startMessage();
 		renderWorking(ctx, tracker.lastTokS ?? tracker.liveTokS());
-		startWorkingAnimation(ctx);
+		startWorkTimer(ctx);
 	});
 
-	pi.on("message_update", async (event, ctx) => {
+	pi.on("message_update", (event, ctx) => {
 		if (!config.enabled || event.message?.role !== "assistant") return;
 		if (!tracker.isStreaming) return;
 		const ev = event.assistantMessageEvent as {
@@ -135,7 +195,7 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 		renderWorking(ctx, tracker.liveTokS());
 	});
 
-	pi.on("message_end", async (event, ctx) => {
+	pi.on("message_end", (event, ctx) => {
 		if (event.message?.role !== "assistant") return;
 		const usageOutput =
 			typeof event.message.usage === "object" && event.message.usage !== null
@@ -143,61 +203,78 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 				: 0;
 		const stopReason = (event.message as { stopReason?: string }).stopReason;
 		tracker.finishMessage(usageOutput, stopReason);
-		if (config.enabled && config.footer) {
-			updateStatus(ctx, tracker.sessionAvgTokS());
-			startFooterAnimation(ctx);
-		}
-		// working message may keep showing last stable speed until next turn
+		stopWorkTimer();
 		renderWorking(ctx, tracker.lastTokS);
 	});
 
-	pi.on("turn_end", async () => {
+	pi.on("turn_end", () => {
 		tracker.stopMessage();
-		if (workingTimer) clearInterval(workingTimer);
-		workingTimer = undefined;
+		stopWorkTimer();
 	});
 
-	pi.on("agent_end", async (_event, ctx) => {
+	pi.on("agent_end", (_event, ctx) => {
 		tracker.stopMessage();
-		clearTimers();
+		stopWorkTimer();
 		if (ctx.hasUI) ctx.ui.setWorkingMessage();
 	});
 
-	pi.on("session_shutdown", async (_event, ctx) => {
-		clearTimers();
-		if (ctx.hasUI) ctx.ui.setStatus(STATUS_ID, undefined);
+	pi.on("session_shutdown", (_event, ctx) => {
+		stopWorkTimer();
+		if (ctx.hasUI) {
+			ctx.ui.setFooter(undefined);
+			ctx.ui.setStatus(STATUS_ID, undefined);
+		}
 	});
 
-	// /pi-token-speed 命令：toggle 启用状态；/pi-token-speed stats 查看统计
+	// ---- 命令 ----
 	pi.registerCommand("pi-token-speed", {
-		description: "Toggle the pi-token-speed extension; /pi-token-speed stats shows session stats",
+		description:
+			"Configure pi-token-speed: [none] toggle on/off, working toggle working indicator, position cycle footer position, stats show stats",
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
-			let [cmd] = String(args ?? "").trim().split(/\s+/).filter(Boolean);
-			if (!cmd) cmd = "toggle";
+			const [cmdRaw] = String(args ?? "").trim().split(/\s+/).filter(Boolean);
+			const cmd = cmdRaw ?? "toggle";
+			const extCtx = ctx as unknown as ExtensionContext;
+
 			if (cmd === "stats") {
 				const avg = tracker.sessionAvgTokS();
 				const last = tracker.lastTokS;
-				const cfg = config;
 				ctx.ui.notify(
-					`pi-token-speed stats — session avg: ${avg === null ? "--" : avg.toFixed(1)} tok/s, last message: ${last === null ? "--" : last.toFixed(1)} tok/s, window: ${cfg.slidingWindowMs}ms`,
+					`pi-token-speed — session avg: ${avg === null ? "--" : `${avg.toFixed(1)} tok/s`}, last message: ${last === null ? "--" : `${last.toFixed(1)} tok/s`}, window: ${config.slidingWindowMs}ms, footer: ${config.footerPosition}`,
 					"info",
 				);
 				return;
 			}
-			// toggle
+			if (cmd === "working") {
+				store.update({ ...config, working: !config.working });
+				Object.assign(config, store.current);
+				if (!config.working && ctx.hasUI) ctx.ui.setWorkingMessage();
+				else renderWorking(extCtx, tracker.lastTokS);
+				ctx.ui.notify(`pi-token-speed working display: ${config.working ? "on" : "off"}`, "info");
+				return;
+			}
+			if (cmd === "position") {
+				const order = ["right", "line", "off"] as const;
+				const next = order[(order.indexOf(config.footerPosition) + 1) % order.length];
+				store.update({ ...config, footerPosition: next });
+				Object.assign(config, store.current);
+				setupFooter(extCtx);
+				ctx.ui.notify(`pi-token-speed footer position: ${next}`, "info");
+				return;
+			}
+			// toggle enabled
 			store.update({ ...config, enabled: !config.enabled });
 			Object.assign(config, store.current);
 			if (!config.enabled) {
+				stopWorkTimer();
 				if (ctx.hasUI) {
-					ctx.ui.setStatus(STATUS_ID, undefined);
+					ctx.ui.setFooter(undefined);
 					ctx.ui.setWorkingMessage();
 				}
 			} else {
-				updateStatus(ctx as unknown as ExtensionContext, tracker.sessionAvgTokS());
+				setupFooter(extCtx);
 			}
 			ctx.ui.notify(`pi-token-speed ${config.enabled ? "enabled" : "disabled"}`, "info");
 		},
 	});
 }
-
 export { STATE_SUFFIX };
