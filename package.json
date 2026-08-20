@@ -1,0 +1,20 @@
+{
+	"name": "pi-extensions",
+	"version": "0.1.0",
+	"description": "Wangsong's pi extensions, installed as a single git package.",
+	"type": "module",
+	"license": "MIT",
+	"keywords": [
+		"pi-package",
+		"pi-extension",
+		"pi"
+	],
+	"pi": {
+		"extensions": [
+			"./index.ts"
+		]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*"
+	}
+}
