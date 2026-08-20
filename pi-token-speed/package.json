@@ -1,0 +1,39 @@
+{
+	"name": "pi-token-speed",
+	"version": "0.1.0",
+	"description": "pi extension: live token output speed (tok/s) with sliding-window estimation, published as an extension status for statusline/footer integrations.",
+	"type": "module",
+	"license": "MIT",
+	"keywords": [
+		"pi-package",
+		"pi-extension",
+		"pi",
+		"tokens",
+		"tok/s",
+		"speed"
+	],
+	"files": [
+		"index.ts",
+		"src/",
+		"README.md",
+		"LICENSE",
+		"tsconfig.json"
+	],
+	"pi": {
+		"extensions": [
+			"./index.ts"
+		]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-ai": "^0.79.0",
+		"@earendil-works/pi-coding-agent": "^0.79.0",
+		"@earendil-works/pi-tui": "^0.79.0",
+		"@types/node": "^24.13.1",
+		"typescript": "^6.0.3"
+	}
+}
