@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { ConfigStore, DEFAULT_CONFIG } from "./config.js";
+import { ConfigStore, type Config } from "./config.js";
 import { SpeedTracker } from "./speed-tracker.js";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -73,14 +73,18 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 	}
 
 	// ---- 自定义 footer（保留 pi 内置统计行 + 速度右对齐/独立行）----
+	let requestRender: (() => void) | undefined;
+
 	function setupFooter(ctx: ExtensionContext) {
 		if (!ctx.hasUI) return;
 		if (!config.enabled || !config.footer || config.footerPosition === "off") {
 			ctx.ui.setFooter(undefined);
+			requestRender = undefined;
 			return;
 		}
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			const unsub = footerData.onBranchChange(() => tui.requestRender());
+			requestRender = () => tui.requestRender();
 
 			const sessionTotals = () => {
 				let input = 0,
@@ -223,6 +227,13 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 		}
 	});
 
+	// 提交设置后主动重绘 footer，否则 render() 不会马上跑、看着像没生效
+	function commit(next: Config): void {
+		store.update(next);
+		Object.assign(config, store.current);
+		requestRender?.();
+	}
+
 	// ---- 命令 ----
 	// 无参数 → 交互式设置面板；子命令：working / position / stats / toggle
 	pi.registerCommand("pi-token-speed", {
@@ -244,8 +255,7 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 			}
 
 		if (cmd === "working") {
-			store.update({ ...config, working: !config.working });
-			Object.assign(config, store.current);
+			commit({ ...config, working: !config.working });
 			if (!config.working && ctx.hasUI) ctx.ui.setWorkingMessage();
 			else renderWorking(extCtx, tracker.lastTokS);
 			ctx.ui.notify(`pi-token-speed working display: ${config.working ? "on" : "off"}`, "info");
@@ -255,16 +265,14 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 		if (cmd === "position") {
 			const order = ["right", "line", "off"] as const;
 			const next = order[(order.indexOf(config.footerPosition) + 1) % order.length];
-			store.update({ ...config, footerPosition: next });
-			Object.assign(config, store.current);
+			commit({ ...config, footerPosition: next });
 			setupFooter(extCtx);
 			ctx.ui.notify(`pi-token-speed footer position: ${next}`, "info");
 			return;
 		}
 
 		if (cmd === "toggle") {
-			store.update({ ...config, enabled: !config.enabled });
-			Object.assign(config, store.current);
+			commit({ ...config, enabled: !config.enabled });
 			if (!config.enabled) {
 				stopWorkTimer();
 				if (ctx.hasUI) {
@@ -296,8 +304,7 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 			if (!choice || choice.startsWith("--")) return;
 
 			if (choice.startsWith("总开关")) {
-				store.update({ ...config, enabled: !config.enabled });
-				Object.assign(config, store.current);
+				commit({ ...config, enabled: !config.enabled });
 				if (!config.enabled) {
 					stopWorkTimer();
 					if (ctx.hasUI) {
@@ -310,24 +317,21 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 				continue;
 			}
 			if (choice.startsWith("工作指示器")) {
-				store.update({ ...config, working: !config.working });
-				Object.assign(config, store.current);
+				commit({ ...config, working: !config.working });
 				if (!config.working && ctx.hasUI) ctx.ui.setWorkingMessage();
 				continue;
 			}
 			if (choice.startsWith("Footer 位置")) {
 				const order = ["right", "line", "off"] as const;
 				const next = order[(order.indexOf(config.footerPosition) + 1) % order.length];
-				store.update({ ...config, footerPosition: next });
-				Object.assign(config, store.current);
+				commit({ ...config, footerPosition: next });
 				setupFooter(extCtx);
 				continue;
 			}
 			if (choice.startsWith("Footer 前缀")) {
 				const value = await ctx.ui.input("速度标签（如 tok/s）", config.label);
 				if (value && value.trim()) {
-					store.update({ ...config, label: value.trim() });
-					Object.assign(config, store.current);
+					commit({ ...config, label: value.trim() });
 				}
 				continue;
 			}
@@ -336,8 +340,7 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 				if (value) {
 					const ms = Number(value.trim());
 					if (Number.isFinite(ms) && ms > 0) {
-						store.update({ ...config, slidingWindowMs: ms });
-						Object.assign(config, store.current);
+						commit({ ...config, slidingWindowMs: ms });
 					}
 				}
 				continue;
