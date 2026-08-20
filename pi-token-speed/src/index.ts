@@ -110,7 +110,7 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 			};
 
 			const speedText = (speed: number | null) =>
-				`${theme.fg("accent", `⚡ ${formatSpeed(config.label, speed)}`)}`;
+				`${theme.fg("accent", formatSpeed(config.label, speed))}`;
 
 			return {
 				dispose: unsub,
@@ -122,7 +122,6 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 					if (totals.output) statsParts.push(`↓${formatTokens(totals.output)}`);
 					if (totals.cacheRead) statsParts.push(`R${formatTokens(totals.cacheRead)}`);
 					if (totals.cacheWrite) statsParts.push(`W${formatTokens(totals.cacheWrite)}`);
-					if (totals.cost) statsParts.push(`$${totals.cost.toFixed(3)}`);
 
 					const cusage = ctx.getContextUsage();
 					if (cusage) {
@@ -258,7 +257,7 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 				const avg = tracker.sessionAvgTokS();
 				const last = tracker.lastTokS;
 				ctx.ui.notify(
-					`pi-token-speed — session avg: ${avg === null ? "--" : `${avg.toFixed(1)} tok/s`}, last message: ${last === null ? "--" : `${last.toFixed(1)} tok/s`}, window: ${config.slidingWindowMs}ms, footer: ${config.footerPosition}`,
+					`pi-token-speed — average: ${avg === null ? "--" : `${avg.toFixed(1)} tok/s`}, last message: ${last === null ? "--" : `${last.toFixed(1)} tok/s`}, window: ${config.slidingWindowMs}ms, footer: ${config.footerPosition}`,
 					"info",
 				);
 				return;
@@ -298,7 +297,7 @@ export default function piTokenSpeed(pi: ExtensionAPI): void {
 				const posLabel = (p: string) =>
 					p === "right" ? "Right-aligned" : p === "line" ? "Own line" : "Off";
 				const choice = await ctx.ui.select(
-					`⚡ pi-token-speed settings (enabled: ${config.enabled ? "yes" : "no"})`,
+					`pi-token-speed settings (enabled: ${config.enabled ? "yes" : "no"})`,
 					[
 						`Enabled: ${config.enabled ? "yes" : "no"}`,
 						`Working indicator: ${config.working ? "on" : "off"}`,
