@@ -1046,47 +1046,45 @@ export function registerSettingsCommand(pi: ExtensionAPI): void {
 
 	const openPanel = async (ctx: ExtensionContext): Promise<boolean> => {
 		if (!ctx.hasUI) return false;
-		await ctx.ui.custom<void>(
-			(tui: TUI, theme, _kb, done) => {
-				const ui = new SettingsUi(
-					theme,
-					getConfig(),
-					(theme as { name?: string }).name ?? "dark",
-					(next) => {
-						const prev = getConfig();
-						updateConfig(next);
-						const controls = getEditorControls();
-						if (next.cursorStyle !== prev.cursorStyle) {
-							controls?.setCursorStyle(next.cursorStyle);
-						}
-						if (
-							next.fullscreen.wheelScrollLines !== prev.fullscreen.wheelScrollLines
-						) {
-							controls?.setWheelScrollLines(next.fullscreen.wheelScrollLines);
-						}
-					},
-					() => done(undefined),
-					() => (s: string) => theme.fg("accent", s),
-					(itemId) => {
-						if (itemId !== "theme") return "";
-						const presets = ["pi-accent", "pi-purple", "pi-pure", "dark"] as const;
-						const currentName = (ctx.ui.theme as { name?: string }).name ?? "dark";
-						const idx = presets.indexOf(currentName as (typeof presets)[number]);
-						const nextName = presets[(idx + 1) % presets.length] ?? presets[0];
-						ctx.ui.setTheme(nextName);
-						return nextName;
-					},
-				);
-				return {
-					render: (w: number) => ui.render(w),
-					invalidate: () => ui.invalidate(),
-					handleInput: (data: string) => {
-						ui.handleInput(data);
-						tui.requestRender();
-					},
-				};
-			},
-		);
+		await ctx.ui.custom<void>((tui: TUI, theme, _kb, done) => {
+			const ui = new SettingsUi(
+				theme,
+				getConfig(),
+				(theme as { name?: string }).name ?? "dark",
+				(next) => {
+					const prev = getConfig();
+					updateConfig(next);
+					const controls = getEditorControls();
+					if (next.cursorStyle !== prev.cursorStyle) {
+						controls?.setCursorStyle(next.cursorStyle);
+					}
+					if (
+						next.fullscreen.wheelScrollLines !== prev.fullscreen.wheelScrollLines
+					) {
+						controls?.setWheelScrollLines(next.fullscreen.wheelScrollLines);
+					}
+				},
+				() => done(undefined),
+				() => (s: string) => theme.fg("accent", s),
+				(itemId) => {
+					if (itemId !== "theme") return "";
+					const presets = ["pi-accent", "pi-purple", "pi-pure", "dark"] as const;
+					const currentName = (ctx.ui.theme as { name?: string }).name ?? "dark";
+					const idx = presets.indexOf(currentName as (typeof presets)[number]);
+					const nextName = presets[(idx + 1) % presets.length] ?? presets[0];
+					ctx.ui.setTheme(nextName);
+					return nextName;
+				},
+			);
+			return {
+				render: (w: number) => ui.render(w),
+				invalidate: () => ui.invalidate(),
+				handleInput: (data: string) => {
+					ui.handleInput(data);
+					tui.requestRender();
+				},
+			};
+		});
 		// Panel closed and focus back on the editor. Refresh the footer so
 		// newly toggled segments (notably footer speed) render immediately.
 		requestFooterRender();
