@@ -547,6 +547,9 @@ class SettingsUi implements SettingsUiHandle {
 	private readonly theme: Theme;
 	private readonly onChange: (config: PiTuiConfig) => void;
 	private readonly onClose: () => void;
+	/** Border/decoration color, keyed to the current thinking level so the
+	 * settings frame matches the input editor's border exactly. */
+	private readonly getBorder: () => (str: string) => string;
 	private cachedWidth: number | undefined;
 	private cachedLines: string[] | undefined;
 	private compact = false;
@@ -556,11 +559,13 @@ class SettingsUi implements SettingsUiHandle {
 		config: PiTuiConfig,
 		onChange: (config: PiTuiConfig) => void,
 		onClose: () => void,
+		getBorder: () => (str: string) => string,
 	) {
 		this.theme = theme;
 		this.config = config;
 		this.onChange = onChange;
 		this.onClose = onClose;
+		this.getBorder = getBorder;
 		this.restoreSelection();
 	}
 
@@ -570,9 +575,7 @@ class SettingsUi implements SettingsUiHandle {
 
 	private restoreSelection(): void {
 		const preferred = this.selectedItemByTab[this.tab];
-		const idx = preferred
-			? this.items().findIndex((i) => i.id === preferred)
-			: 0;
+		const idx = preferred ? this.items().findIndex((i) => i.id === preferred) : 0;
 		this.selectedIndex = idx >= 0 ? idx : 0;
 	}
 
@@ -604,7 +607,7 @@ class SettingsUi implements SettingsUiHandle {
 		right: string,
 		width: number,
 	): string {
-		const paint = (s: string) => this.theme.fg("accent", s);
+		const paint = this.getBorder();
 		if (width <= 1) return "";
 		if (label.length === 0 || width < 8) {
 			return paint(
@@ -620,7 +623,7 @@ class SettingsUi implements SettingsUiHandle {
 	}
 
 	private boxLine(content: string, width: number): string {
-		const paint = (s: string) => this.theme.fg("accent", s);
+		const paint = this.getBorder();
 		if (width <= 2) return truncateToWidth(content, width, "");
 		return `${paint("│")}${padRight(content, width - 2)}${paint("│")}`;
 	}
@@ -708,9 +711,7 @@ class SettingsUi implements SettingsUiHandle {
 		lines.push(this.boxLine(truncateToWidth(tabBar, innerWidth), width));
 
 		// Separator.
-		lines.push(
-			this.boxLine(dim("─".repeat(Math.max(0, innerWidth))), width),
-		);
+		lines.push(this.boxLine(dim("─".repeat(Math.max(0, innerWidth))), width));
 
 		// Items: selected row accent-bracketed, value right-aligned (footer style).
 		for (const item of visibleItems) {
@@ -720,10 +721,7 @@ class SettingsUi implements SettingsUiHandle {
 			if (this.compact) {
 				lines.push(
 					this.boxLine(
-						truncateToWidth(
-							`${prefix}${label}: ${item.currentValue}`,
-							innerWidth,
-						),
+						truncateToWidth(`${prefix}${label}: ${item.currentValue}`, innerWidth),
 						width,
 					),
 				);
@@ -740,14 +738,14 @@ class SettingsUi implements SettingsUiHandle {
 
 		// Scroll info when the tab has more items than fit.
 		if (items.length > maxVisible) {
-			const scroll = dim(`${start + 1}-${start + visibleItems.length} / ${items.length}`);
+			const scroll = dim(
+				`${start + 1}-${start + visibleItems.length} / ${items.length}`,
+			);
 			lines.push(this.boxLine(alignRight("", scroll, innerWidth, theme), width));
 		}
 
 		// Hint line (dim), then bottom border.
-		lines.push(
-			this.boxLine(dim(truncateToWidth(copy.hint, innerWidth)), width),
-		);
+		lines.push(this.boxLine(dim(truncateToWidth(copy.hint, innerWidth)), width));
 		lines.push(this.borderLine("╰", "", "╯", width));
 
 		this.cachedWidth = width;
@@ -788,6 +786,7 @@ export function registerSettingsCommand(pi: ExtensionAPI): void {
 							}
 						},
 						() => done(undefined),
+						() => theme.getThinkingBorderColor(pi.getThinkingLevel()),
 					);
 					return {
 						render: (w: number) => ui.render(w),
