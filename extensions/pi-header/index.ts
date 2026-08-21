@@ -17,6 +17,7 @@ import {
 	visibleWidth,
 } from "../../shared/utils.js";
 import { getConfig } from "../../shared/pi-tui-store.js";
+import { resolveBorderPaint } from "../../shared/border-paint.js";
 
 const LOGO_CELL = "███";
 
@@ -256,7 +257,15 @@ export class PiHeader implements Component {
 
 	render(width: number): string[] {
 		const theme = this.ctx.ui.theme;
-		const paint = (s: string) => theme.fg("accent", s);
+		const configured = resolveBorderPaint(
+			getConfig(),
+			theme,
+			this.pi.getThinkingLevel(),
+		);
+		// Pi's native frame color is `borderMuted`; default mode should match
+		// that so the three modes are visually distinct.
+		const paint =
+			configured ?? ((s: string) => theme.fg("borderMuted", s));
 		const muted = (s: string) => theme.fg("muted", s);
 		const dim = (s: string) => theme.fg("dim", s);
 		const bold = (s: string) => theme.bold(s);

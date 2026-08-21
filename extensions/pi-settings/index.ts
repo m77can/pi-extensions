@@ -23,6 +23,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "../../shared/utils.js";
+import { resolveBorderPaint } from "../../shared/border-paint.js";
 
 const WHEEL_SCROLL_PRESETS = [1, 4, 7, 10] as const;
 const SPEED_LABEL_PRESETS = ["tok/s", "tokens/s", "tps"] as const;
@@ -38,6 +39,8 @@ interface SettingItem {
 	/** Which config block this item mutates. Only needed on the merged Metrics tab
 	 * (speed/telemetry share it); other tabs infer from their own handler. */
 	kind?: "speed" | "telemetry";
+	/** Section header row (non-selectable divider) for the merged Metrics tab. */
+	header?: boolean;
 	/** Explanation shown under the selected item, so each toggle reads clearly. */
 	description?: string;
 }
@@ -63,6 +66,7 @@ const COPY = {
 			wheelScrollLines: "Mouse wheel speed",
 			cursorStyle: "Cursor style",
 			iconMode: "Icon mode",
+			borderStyle: "Border style",
 			cwd: "CWD",
 			sessionName: "Session name",
 			gitBranch: "Git branch",
@@ -84,6 +88,9 @@ const COPY = {
 			tokenCounts: "Token counts",
 			stallDetails: "Stall details",
 			routerSpec: "Router spec (recon mode)",
+			speedEnabled: "Live speed enabled",
+			speedGroup: "Live speed",
+			telemetryGroup: "Per-turn telemetry",
 		},
 		descriptions: {
 			enabled: "Master switch for the whole pi-tui UI",
@@ -106,6 +113,7 @@ const COPY = {
 			wheelScrollLines: "Lines scrolled per mouse-wheel notch in fullscreen",
 			iconMode: "Nerd Font icons vs ASCII glyphs (auto-detects terminal)",
 			cursorStyle: "Shape of the text cursor in the editor",
+			borderStyle: "Color of header/editor/settings frames (all UI chrome)",
 			cwd: "Working directory shown on the footer left",
 			sessionName: "Session name next to the CWD",
 			gitBranch: "Current branch name (or detached HEAD)",
@@ -126,6 +134,7 @@ const COPY = {
 				`${count} ${count === 1 ? "line" : "lines"} / notch`,
 			cursorStyles: { block: "Block", bar: "Bar", underline: "Underline" },
 			icons: { auto: "Auto", nerd: "Nerd", ascii: "ASCII" },
+			borderStyles: { accent: "Accent", thinking: "Thinking", default: "Default" },
 			ms: (count: number) => `${count}ms`,
 			countStrategies: {
 				estimate: "Estimate",
@@ -149,6 +158,7 @@ const COPY = {
 			wheelScrollLines: "鼠标滚轮速度",
 			cursorStyle: "光标样式",
 			iconMode: "图标模式",
+			borderStyle: "边框颜色",
 			cwd: "当前目录",
 			sessionName: "会话名",
 			gitBranch: "Git 分支",
@@ -170,6 +180,9 @@ const COPY = {
 			tokenCounts: "Token 数量",
 			stallDetails: "停顿详情",
 			routerSpec: "Router spec（侦察模式）",
+			speedEnabled: "实时速度启用",
+			speedGroup: "实时速度",
+			telemetryGroup: "每轮遥测",
 		},
 		descriptions: {
 			enabled: "整个 pi-tui 界面的总开关",
@@ -189,6 +202,7 @@ const COPY = {
 			wheelScrollLines: "全屏模式下每次滚动滚轮的行数",
 			iconMode: "Nerd Font 图标 vs ASCII 符号（自动检测终端）",
 			cursorStyle: "编辑器里文本光标的形状",
+			borderStyle: "header/编辑器/设置面板边框的颜色（所有 UI 装饰）",
 			cwd: "Footer 左侧显示的工作目录",
 			sessionName: "当前目录旁边的会话名",
 			gitBranch: "当前分支名（或分离 HEAD）",
@@ -208,6 +222,7 @@ const COPY = {
 			wheelLines: (count: number) => `每格 ${count} 行`,
 			cursorStyles: { block: "块", bar: "竖线", underline: "下划线" },
 			icons: { auto: "自动", nerd: "Nerd", ascii: "ASCII" },
+			borderStyles: { accent: "强调色", thinking: "思维色", default: "默认" },
 			ms: (count: number) => `${count}ms`,
 			countStrategies: { estimate: "估算", direct: "直接", chars: "字符÷4" },
 		},
@@ -250,6 +265,17 @@ function cycleIconMode(config: PiTuiConfig): PiTuiConfig {
 		icons: {
 			mode: cycleValue(config.icons.mode, ["auto", "nerd", "ascii"] as const),
 		},
+	};
+}
+
+function cycleBorderStyle(config: PiTuiConfig): PiTuiConfig {
+	return {
+		...config,
+		borderStyle: cycleValue(config.borderStyle, [
+			"accent",
+			"thinking",
+			"default",
+		] as const),
 	};
 }
 
@@ -417,6 +443,12 @@ function buildIconsItems(
 			currentValue: copy.values.cursorStyles[config.cursorStyle],
 			description: d.cursorStyle,
 		},
+		{
+			id: "borderStyle",
+			label: copy.labels.borderStyle,
+			currentValue: copy.values.borderStyles[config.borderStyle],
+			description: d.borderStyle,
+		},
 	];
 }
 
@@ -501,7 +533,7 @@ function buildSpeedItems(
 	return [
 		{
 			id: "enabled",
-			label: copy.labels.enabled,
+			label: copy.labels.speedEnabled,
 			currentValue: flag(speed.enabled),
 			description: d.enabled,
 			kind: "speed",
@@ -611,13 +643,21 @@ function buildTelemetryItems(
 	];
 }
 
-/** Merged Metrics tab: live-speed tuning first, then per-turn telemetry. */
+/** Merged Metrics tab: live-speed tuning first, then per-turn telemetry,
+ * separated by non-selectable header rows. */
 function buildMetricsItems(
 	config: PiTuiConfig,
 	copy: SettingsCopy,
 ): SettingItem[] {
 	return [
+		{ id: "h-speed", label: copy.labels.speedGroup, currentValue: "", header: true },
 		...buildSpeedItems(config, copy),
+		{
+			id: "h-telemetry",
+			label: copy.labels.telemetryGroup,
+			currentValue: "",
+			header: true,
+		},
 		...buildTelemetryItems(config, copy),
 	];
 }
@@ -651,6 +691,7 @@ function handleSettingChange(
 	if (tab === "icons") {
 		if (itemId === "mode") return cycleIconMode(config);
 		if (itemId === "cursorStyle") return cycleCursorStyle(config);
+		if (itemId === "borderStyle") return cycleBorderStyle(config);
 	}
 	if (tab === "segments") {
 		return toggleSetting(config, itemId as keyof PiTuiConfig["footerSegments"]);
@@ -724,10 +765,18 @@ class SettingsUi implements SettingsUiHandle {
 		return buildItems(this.tab, this.config);
 	}
 
+	private isSelectable(item: SettingItem | undefined): boolean {
+		return !!item && !item.header;
+	}
+
 	private restoreSelection(): void {
 		const preferred = this.selectedItemByTab[this.tab];
 		const idx = preferred ? this.items().findIndex((i) => i.id === preferred) : 0;
 		this.selectedIndex = idx >= 0 ? idx : 0;
+		// Never land on a header row.
+		if (this.selectedIndex < this.items().length - 1 && !this.isSelectable(this.items()[this.selectedIndex])) {
+			this.selectedIndex += 1;
+		}
 	}
 
 	private applySetting(item: SettingItem): void {
@@ -745,10 +794,17 @@ class SettingsUi implements SettingsUiHandle {
 	}
 
 	private move(offset: number): void {
-		const n = this.items().length;
+		const all = this.items();
+		const n = all.length;
 		if (n === 0) return;
-		this.selectedIndex = (this.selectedIndex + offset + n) % n;
-		this.selectedItemByTab[this.tab] = this.items()[this.selectedIndex]?.id;
+		let next = this.selectedIndex;
+		for (let i = 0; i < n; i++) {
+			next = (next + offset + n) % n;
+			if (this.isSelectable(all[next])) break;
+		}
+		if (!this.isSelectable(all[next])) return;
+		this.selectedIndex = next;
+		this.selectedItemByTab[this.tab] = all[this.selectedIndex]?.id;
 		this.invalidate();
 	}
 
@@ -806,7 +862,7 @@ class SettingsUi implements SettingsUiHandle {
 			data === " "
 		) {
 			const item = this.items()[this.selectedIndex];
-			if (item) this.applySetting(item);
+			if (item && this.isSelectable(item)) this.applySetting(item);
 			return;
 		}
 		this.invalidate();
@@ -865,7 +921,15 @@ class SettingsUi implements SettingsUiHandle {
 		lines.push(this.boxLine(dim("─".repeat(Math.max(0, innerWidth))), width));
 
 		// Items: selected row accent-bracketed, value right-aligned (footer style).
+		// Header rows render as dim separators and are never selectable.
 		for (const item of visibleItems) {
+			if (item.header) {
+				const label = bold(paint(`─ ${item.label} ─`));
+				lines.push(
+					this.boxLine(truncateToWidth(label, innerWidth), width),
+				);
+				continue;
+			}
 			const isSel = item.id === items[this.selectedIndex]?.id;
 			const prefix = isSel ? paint("▸ ") : "  ";
 			const label = isSel ? paint(bold(item.label)) : item.label;
@@ -950,7 +1014,12 @@ export function registerSettingsCommand(pi: ExtensionAPI): void {
 							}
 						},
 						() => done(undefined),
-						() => (s: string) => theme.fg("accent", s),
+						() =>
+							resolveBorderPaint(
+								getConfig(),
+								theme,
+								pi.getThinkingLevel(),
+							) ?? ((s: string) => theme.fg("borderMuted", s)),
 					);
 					return {
 						render: (w: number) => ui.render(w),

@@ -10,7 +10,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
-import type { CursorStyle } from "../../shared/config.js";
+import type { CursorStyle, PiTuiConfig } from "../../shared/config.js";
 import {
 	applyFullscreenWheelScrollLines,
 	DEFAULT_FULLSCREEN_WHEEL_SCROLL_LINES,
@@ -25,6 +25,7 @@ import {
 	setEditorControls,
 	subscribeConfig,
 } from "../../shared/pi-tui-store.js";
+import { resolveBorderPaint } from "../../shared/border-paint.js";
 
 function isTuiContext(ctx: ExtensionContext): boolean {
 	try {
@@ -202,15 +203,17 @@ export function installEditor(
 		activeTui = tui;
 		applyFullscreenWheelScrollLines(tui, currentWheelScrollLines);
 		previousHardwareCursor = tui.getShowHardwareCursor();
-		// Fixed accent paint: input frame matches header/footer accent and is
-		// immune to the framework's thinking-level border recoloring.
-		const paint = (s: string) => ctx.ui.theme.fg("accent", s);
+		const resolved = resolveBorderPaint(
+			getConfig(),
+			ctx.ui.theme,
+			_pi.getThinkingLevel(),
+		);
 		activeEditor = new PiEditor(
 			tui,
 			editorTheme,
 			keybindings,
 			currentCursorStyle,
-			paint,
+			resolved ?? undefined,
 		);
 		return activeEditor;
 	});
@@ -238,6 +241,8 @@ export function installEditor(
 
 export default function (pi: ExtensionAPI): void {
 	let controls: ReturnType<typeof installEditor> | undefined;
+	let lastCtx: ExtensionContext | undefined;
+	let lastBorderStyle: PiTuiConfig["borderStyle"] | undefined;
 
 	const teardown = (): void => {
 		try {
@@ -265,6 +270,7 @@ export default function (pi: ExtensionAPI): void {
 			);
 			setEditorControls(controls);
 		}
+		lastBorderStyle = c.borderStyle;
 	};
 
 	pi.on("session_start", (_event, ctx) => {
@@ -275,9 +281,16 @@ export default function (pi: ExtensionAPI): void {
 		const c = getConfig();
 		controls?.setCursorStyle(c.cursorStyle);
 		controls?.setWheelScrollLines(c.fullscreen.wheelScrollLines);
+		// The frame paint is captured at construction; recreate the editor when
+		// the border style changes so the new color applies immediately.
+		if (c.borderStyle !== lastBorderStyle) {
+			teardown();
+			if (lastCtx) apply(lastCtx);
+		}
 	});
 
 	pi.on("session_shutdown", () => {
 		teardown();
+		lastCtx = undefined;
 	});
 }

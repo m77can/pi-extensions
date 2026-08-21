@@ -15,6 +15,7 @@
 	"files": [
 		"shared/",
 		"extensions/",
+		"themes/",
 		"README.md",
 		"LICENSE"
 	],
@@ -31,6 +32,9 @@
 			"./extensions/pi-metrics/index.ts",
 			"./extensions/pi-settings/index.ts",
 			"./extensions/pi-router-spec/index.ts"
+		],
+		"themes": [
+			"./themes"
 		]
 	},
 	"peerDependencies": {
