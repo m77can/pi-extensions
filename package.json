@@ -15,7 +15,6 @@
 	"files": [
 		"shared/",
 		"extensions/",
-		"pi-router-spec/",
 		"README.md",
 		"LICENSE"
 	],
@@ -30,7 +29,7 @@
 			"./extensions/pi-footer/index.ts",
 			"./extensions/pi-metrics/index.ts",
 			"./extensions/pi-settings/index.ts",
-			"./pi-router-spec/index.ts"
+			"./extensions/pi-router-spec/index.ts"
 		]
 	},
 	"peerDependencies": {

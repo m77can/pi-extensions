@@ -12,5 +12,5 @@
 		"lib": ["ES2022"],
 		"types": ["node"]
 	},
-	"include": ["shared/**/*.ts", "extensions/**/*.ts", "pi-router-spec/**/*.ts", "tests/**/*.ts"]
+	"include": ["shared/**/*.ts", "extensions/**/*.ts", "tests/**/*.ts"]
 }
