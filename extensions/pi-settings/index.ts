@@ -71,7 +71,6 @@ const COPY = {
 			tokens: "Tokens",
 			cost: "Cost",
 			extensionStatuses: "Extension status line",
-			speedSegment: "Speed in footer",
 			cacheHit: "Cache hit",
 			speedWorking: "Working indicator",
 			speedLabel: "Speed label",
@@ -116,7 +115,6 @@ const COPY = {
 			context: "Context occupancy bar and percentage",
 			tokens: "Input / output token counts",
 			cost: "Session cost in USD",
-			speedSegment: "Session-average decode throughput (tok/s)",
 			cacheHit: "DeepSeek cache-hit share (cacheRead ÷ billed input)",
 			extensionStatuses: "Status line from other loaded extensions",
 		},
@@ -162,7 +160,6 @@ const COPY = {
 			tokens: "Token",
 			cost: "费用",
 			extensionStatuses: "扩展状态行",
-			speedSegment: "Footer 中的速度",
 			cacheHit: "缓存命中",
 			speedWorking: "工作指示器",
 			speedLabel: "速度标签",
@@ -204,7 +201,6 @@ const COPY = {
 			context: "上下文占用进度条和百分比",
 			tokens: "输入 / 输出 token 数",
 			cost: "会话费用（美元）",
-			speedSegment: "会话平均解码吞吐（tok/s）",
 			cacheHit: "DeepSeek 缓存命中率（cacheRead ÷ 计费输入）",
 			extensionStatuses: "其他已加载扩展的状态行",
 		},
@@ -422,7 +418,12 @@ function buildSegmentsItems(
 	const flag = (value: boolean) => (value ? copy.values.on : copy.values.off);
 	const d = copy.descriptions;
 	return [
-		{ id: "cwd", label: copy.labels.cwd, currentValue: flag(segs.cwd), description: d.cwd },
+		{
+			id: "cwd",
+			label: copy.labels.cwd,
+			currentValue: flag(segs.cwd),
+			description: d.cwd,
+		},
 		{
 			id: "sessionName",
 			label: copy.labels.sessionName,
@@ -459,13 +460,17 @@ function buildSegmentsItems(
 			currentValue: flag(segs.context),
 			description: d.context,
 		},
-		{ id: "tokens", label: copy.labels.tokens, currentValue: flag(segs.tokens), description: d.tokens },
-		{ id: "cost", label: copy.labels.cost, currentValue: flag(segs.cost), description: d.cost },
 		{
-			id: "speed",
-			label: copy.labels.speedSegment,
-			currentValue: flag(segs.speed),
-			description: d.speedSegment,
+			id: "tokens",
+			label: copy.labels.tokens,
+			currentValue: flag(segs.tokens),
+			description: d.tokens,
+		},
+		{
+			id: "cost",
+			label: copy.labels.cost,
+			currentValue: flag(segs.cost),
+			description: d.cost,
 		},
 		{
 			id: "cacheHit",

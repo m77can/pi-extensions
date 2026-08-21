@@ -33,8 +33,6 @@ export interface FooterSegments {
 	tokens: boolean;
 	cost: boolean;
 	extensionStatuses: boolean;
-	/** Session-average decode throughput (harness tok/s) shown in the footer. */
-	speed: boolean;
 	/** DeepSeek cache-hit share (harness cacheRead / billed input). */
 	cacheHit: boolean;
 }
@@ -103,7 +101,6 @@ export const DEFAULT_CONFIG: PiTuiConfig = {
 		tokens: true,
 		cost: true,
 		extensionStatuses: true,
-		speed: true,
 		cacheHit: true,
 	},
 	telemetry: {

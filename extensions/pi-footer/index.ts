@@ -56,11 +56,7 @@ import {
 	requestFooterRender,
 	getSessionMetrics,
 } from "../../shared/pi-tui-store.js";
-import {
-	cacheHitPercent,
-	sessionTokensPerSecond,
-	formatTokensPerSecond,
-} from "../../shared/metrics.js";
+import { cacheHitPercent } from "../../shared/metrics.js";
 
 function isTuiContext(ctx: ExtensionContext): boolean {
 	try {
@@ -244,18 +240,6 @@ function renderStatsBlock(
 	return stats.join(` ${theme.fg("dim", "|")} `);
 }
 
-/** Session-average decode throughput (harness tok/s), right-aligned. */
-function renderSpeedSegment(
-	theme: Theme,
-	glyphs: IconGlyphs,
-	config: PiTuiConfig,
-): string {
-	const tps = sessionTokensPerSecond(getSessionMetrics());
-	const value =
-		tps === null ? "--" : `${formatTokensPerSecond(tps)} ${config.speed.label}`;
-	return theme.fg("accent", `${glyphs.speed} ${value}`);
-}
-
 /** DeepSeek cache-hit share (harness cacheRead / billed input). */
 function renderCacheHitSegment(theme: Theme, glyphs: IconGlyphs): string {
 	const pct = cacheHitPercent(getSessionMetrics());
@@ -406,12 +390,6 @@ export function installFooter(
 
 				const statsBlock = renderStatsBlock(theme, totals, glyphs, segments);
 				let rightBlock = statsBlock;
-				if (segments.speed) {
-					const speedSeg = renderSpeedSegment(theme, glyphs, config);
-					rightBlock = [statsBlock, speedSeg]
-						.filter(Boolean)
-						.join(` ${theme.fg("dim", "|")} `);
-				}
 				if (segments.cacheHit) {
 					const cacheSeg = renderCacheHitSegment(theme, glyphs);
 					rightBlock = [rightBlock, cacheSeg]
