@@ -71,7 +71,6 @@ const COPY = {
 			runtime: "Runtime",
 			context: "Context bar",
 			tokens: "Tokens",
-			cost: "Cost",
 			extensionStatuses: "Extension status line",
 			cacheHit: "Cache hit",
 			speedWorking: "Working indicator",
@@ -84,7 +83,6 @@ const COPY = {
 			totalDuration: "Total duration",
 			tokenCounts: "Token counts",
 			stallDetails: "Stall details",
-			costRate: "Cost rate",
 			routerSpec: "Router spec (recon mode)",
 		},
 		descriptions: {
@@ -104,7 +102,6 @@ const COPY = {
 			totalDuration: "Total wall time of the turn",
 			tokenCounts: "Input / output tokens for the turn",
 			stallDetails: "Time lost to stalls ≥ 500ms (inference pauses)",
-			costRate: "Price per million tokens",
 			settingsLanguage: "Interface language for the settings panel",
 			wheelScrollLines: "Lines scrolled per mouse-wheel notch in fullscreen",
 			iconMode: "Nerd Font icons vs ASCII glyphs (auto-detects terminal)",
@@ -117,7 +114,6 @@ const COPY = {
 			runtime: "Detected language runtime (node/rust/go/...)",
 			context: "Context occupancy bar and percentage",
 			tokens: "Input / output token counts",
-			cost: "Session cost in USD",
 			cacheHit: "DeepSeek cache-hit share (cacheRead ÷ billed input)",
 			extensionStatuses: "Status line from other loaded extensions",
 			routerSpec: "First-round read+bash recon before full continuation",
@@ -161,7 +157,6 @@ const COPY = {
 			runtime: "运行环境",
 			context: "上下文栏",
 			tokens: "Token",
-			cost: "费用",
 			extensionStatuses: "扩展状态行",
 			cacheHit: "缓存命中",
 			speedWorking: "工作指示器",
@@ -174,7 +169,6 @@ const COPY = {
 			totalDuration: "总耗时",
 			tokenCounts: "Token 数量",
 			stallDetails: "停顿详情",
-			costRate: "费用速率",
 			routerSpec: "Router spec（侦察模式）",
 		},
 		descriptions: {
@@ -191,7 +185,6 @@ const COPY = {
 			totalDuration: "本轮的总耗时",
 			tokenCounts: "本轮的输入 / 输出 token 数",
 			stallDetails: "≥500ms 的停顿（推理暂停）占用的时间",
-			costRate: "每百万 token 的价格",
 			settingsLanguage: "设置面板的界面语言",
 			wheelScrollLines: "全屏模式下每次滚动滚轮的行数",
 			iconMode: "Nerd Font 图标 vs ASCII 符号（自动检测终端）",
@@ -204,7 +197,6 @@ const COPY = {
 			runtime: "检测到的语言运行时（node/rust/go/...）",
 			context: "上下文占用进度条和百分比",
 			tokens: "输入 / 输出 token 数",
-			cost: "会话费用（美元）",
 			cacheHit: "DeepSeek 缓存命中率（cacheRead ÷ 计费输入）",
 			extensionStatuses: "其他已加载扩展的状态行",
 			routerSpec: "首轮 read+bash 侦察，再全量续跑",
@@ -485,12 +477,6 @@ function buildSegmentsItems(
 			description: d.tokens,
 		},
 		{
-			id: "cost",
-			label: copy.labels.cost,
-			currentValue: flag(segs.cost),
-			description: d.cost,
-		},
-		{
 			id: "cacheHit",
 			label: copy.labels.cacheHit,
 			currentValue: flag(segs.cacheHit),
@@ -620,13 +606,6 @@ function buildTelemetryItems(
 			label: copy.labels.stallDetails,
 			currentValue: flag(telemetry.stalls),
 			description: d.stallDetails,
-			kind: "telemetry",
-		},
-		{
-			id: "cost",
-			label: copy.labels.costRate,
-			currentValue: flag(telemetry.cost),
-			description: d.costRate,
 			kind: "telemetry",
 		},
 	];
@@ -971,7 +950,7 @@ export function registerSettingsCommand(pi: ExtensionAPI): void {
 							}
 						},
 						() => done(undefined),
-						() => theme.getThinkingBorderColor(pi.getThinkingLevel()),
+						() => (s: string) => theme.fg("accent", s),
 					);
 					return {
 						render: (w: number) => ui.render(w),

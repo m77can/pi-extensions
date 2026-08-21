@@ -32,7 +32,6 @@ export interface FooterSegments {
 	runtime: boolean;
 	context: boolean;
 	tokens: boolean;
-	cost: boolean;
 	extensionStatuses: boolean;
 	/** DeepSeek cache-hit share (harness cacheRead / billed input). */
 	cacheHit: boolean;
@@ -45,7 +44,6 @@ export interface TelemetryConfig {
 	duration: boolean;
 	tokens: boolean;
 	stalls: boolean;
-	cost: boolean;
 }
 
 export interface SpeedConfig {
@@ -101,7 +99,6 @@ export const DEFAULT_CONFIG: PiTuiConfig = {
 		runtime: true,
 		context: true,
 		tokens: true,
-		cost: true,
 		extensionStatuses: true,
 		cacheHit: true,
 	},
@@ -112,7 +109,6 @@ export const DEFAULT_CONFIG: PiTuiConfig = {
 		duration: true,
 		tokens: true,
 		stalls: true,
-		cost: true,
 	},
 	speed: {
 		enabled: true,

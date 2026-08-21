@@ -233,9 +233,6 @@ function renderStatsBlock(
 			);
 		}
 	}
-	if (segments.cost) {
-		stats.push(theme.fg("warning", `${glyphs.cost} $${totals.cost.toFixed(3)}`));
-	}
 
 	return stats.join(` ${theme.fg("dim", "|")} `);
 }

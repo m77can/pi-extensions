@@ -18,7 +18,6 @@ export interface UsageTotals {
 	output: number;
 	cacheRead: number;
 	cacheWrite: number;
-	cost: number;
 	latestCacheHitRate: number | undefined;
 }
 
@@ -39,7 +38,6 @@ export function getUsageTotals(ctx: ExtensionContext): UsageTotals {
 		output: 0,
 		cacheRead: 0,
 		cacheWrite: 0,
-		cost: 0,
 		latestCacheHitRate: undefined,
 	};
 	for (const entry of ctx.sessionManager.getEntries()) {
@@ -51,7 +49,6 @@ export function getUsageTotals(ctx: ExtensionContext): UsageTotals {
 			totals.output += u.output ?? 0;
 			totals.cacheRead += u.cacheRead ?? 0;
 			totals.cacheWrite += u.cacheWrite ?? 0;
-			totals.cost += u.cost?.total ?? 0;
 			const promptTokens =
 				(u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0);
 			if (promptTokens > 0) {

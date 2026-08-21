@@ -204,6 +204,10 @@ export function installEditor(
 			keybindings,
 			currentCursorStyle,
 		);
+		// Align the input border with the header/footer accent color. Pi's
+		// framework recolors `borderColor` by thinking level; override it once at
+		// construction so the rounded frame stays accent (same as header/footer).
+		activeEditor.borderColor = (s: string) => ctx.ui.theme.fg("accent", s);
 		return activeEditor;
 	});
 	return {

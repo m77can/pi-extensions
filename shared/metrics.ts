@@ -63,8 +63,6 @@ export interface TurnTelemetry {
 	cacheReadTokens: number;
 	cacheWriteTokens: number;
 	totalTokens: number;
-	costUsd: number;
-	rateUsdPerMTokens: number | null;
 }
 
 export interface SessionMetrics {
@@ -86,13 +84,6 @@ function round(value: number, decimals: number): number {
 	return Math.round(value * factor) / factor;
 }
 
-/** Compute blended $/M-tokens from list-price cost, guarding degenerate inputs. */
-function rateUsdPerM(costUsd: number, totalTokens: number): number | null {
-	if (!Number.isFinite(costUsd) || costUsd <= 0) return null;
-	if (!Number.isFinite(totalTokens) || totalTokens <= 0) return null;
-	return round(costUsd / (totalTokens / 1_000_000), 2);
-}
-
 /** Sum provider-reported usage across a turn's assistant messages. */
 export function foldMessageUsage(messages: AssistantMessage[]): {
 	input: number;
@@ -100,14 +91,12 @@ export function foldMessageUsage(messages: AssistantMessage[]): {
 	cacheRead: number;
 	cacheWrite: number;
 	totalTokens: number;
-	costUsd: number;
 } {
 	let input = 0;
 	let output = 0;
 	let cacheRead = 0;
 	let cacheWrite = 0;
 	let totalTokens = 0;
-	let costUsd = 0;
 	for (const m of messages) {
 		const u = m.usage;
 		if (!u) continue;
@@ -116,17 +105,22 @@ export function foldMessageUsage(messages: AssistantMessage[]): {
 		cacheRead += u.cacheRead ?? 0;
 		cacheWrite += u.cacheWrite ?? 0;
 		totalTokens += u.totalTokens ?? 0;
-		costUsd += u.cost?.total ?? 0;
 	}
-	return { input, output, cacheRead, cacheWrite, totalTokens, costUsd };
+	return { input, output, cacheRead, cacheWrite, totalTokens };
 }
 
-function isAssistantMessage(message: unknown): message is AssistantMessage {
+/** A message is assistant-role; usage may still be absent mid-stream. */
+function isAssistantMessage(message: unknown): boolean {
 	if (!message || typeof message !== "object") return false;
 	const m = message as Record<string, unknown>;
-	return (
-		m.role === "assistant" && typeof m.usage === "object" && m.usage !== null
-	);
+	return m.role === "assistant";
+}
+
+/** Assistant message with a complete (or at least present) usage record. */
+function isAssistantWithUsage(message: unknown): message is AssistantMessage {
+	if (!isAssistantMessage(message)) return false;
+	const m = message as Record<string, unknown>;
+	return typeof m.usage === "object" && m.usage !== null;
 }
 
 /**
@@ -209,7 +203,7 @@ export class TurnMetricsAccumulator {
 	}
 
 	onMessageEnd(message: unknown): void {
-		if (!this.timing || !isAssistantMessage(message)) return;
+		if (!this.timing || !isAssistantWithUsage(message)) return;
 		const now = this.now();
 		if (timingMessageStart(this.timing)) {
 			this.timing.generationMs += now - this.timing.messageStartMs!;
@@ -255,8 +249,6 @@ export class TurnMetricsAccumulator {
 			generationMs: timing.generationMs,
 		});
 
-		const rate = rateUsdPerM(usage.costUsd, usage.totalTokens);
-
 		return {
 			tps: tps.value,
 			tpsPrimary: tps.primary,
@@ -272,8 +264,6 @@ export class TurnMetricsAccumulator {
 			cacheReadTokens: usage.cacheRead,
 			cacheWriteTokens: usage.cacheWrite,
 			totalTokens: usage.totalTokens,
-			costUsd: usage.costUsd,
-			rateUsdPerMTokens: rate,
 		};
 	}
 }

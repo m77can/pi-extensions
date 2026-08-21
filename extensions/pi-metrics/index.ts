@@ -24,7 +24,7 @@ import { fmtTokens } from "../../shared/utils.js";
  *
  * Sole owner of the speed/telemetry data:
  *   1. Live tok/s in the streaming working indicator (sliding window).
- *   2. Per-turn telemetry at turn_end (harness decode throughput + TTFT/stall/cost).
+ *   2. Per-turn telemetry at turn_end (harness decode throughput + TTFT/stall).
  *   3. Whole-session harness metrics fed into the global store for pi-footer.
  *
  * Data layer gating: feeding is gated by `enabled` only (never by display
@@ -70,7 +70,6 @@ export function formatTurnTelemetry(
 			duration: boolean;
 			tokens: boolean;
 			stalls: boolean;
-			cost: boolean;
 		};
 	},
 	iconMode: IconMode,
@@ -119,14 +118,6 @@ export function formatTurnTelemetry(
 			theme.fg(
 				"warning",
 				`${glyphs.stall} stall ${telemetry.stallCount}x / ${formatTurnDuration(telemetry.stallMs)}`,
-			),
-		);
-	}
-	if (t.cost && telemetry.rateUsdPerMTokens !== null) {
-		parts.push(
-			theme.fg(
-				"warning",
-				`${glyphs.cost} $${telemetry.rateUsdPerMTokens.toFixed(2)}/M`,
 			),
 		);
 	}
