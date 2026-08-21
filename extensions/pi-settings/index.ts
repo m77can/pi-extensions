@@ -753,8 +753,9 @@ class SettingsUi implements SettingsUiHandle {
 	private readonly theme: Theme;
 	private readonly onChange: (config: PiTuiConfig) => void;
 	private readonly onClose: () => void;
-	/** External effect not representable in PiTuiConfig (e.g. pi theme switch). */
-	private readonly onExternalAction: (itemId: string) => void;
+	/** External effect not representable in PiTuiConfig (e.g. pi theme switch).
+	 * Returns the new display value for the mutated item. */
+	private readonly onExternalAction: (itemId: string) => string;
 	/** Border/decoration color, keyed to the current thinking level so the
 	 * settings frame matches the input editor's border exactly. */
 	private readonly getBorder: () => (str: string) => string;
@@ -769,7 +770,7 @@ class SettingsUi implements SettingsUiHandle {
 		onChange: (config: PiTuiConfig) => void,
 		onClose: () => void,
 		getBorder: () => (str: string) => string,
-		onExternalAction: (itemId: string) => void,
+		onExternalAction: (itemId: string) => string,
 	) {
 		this.theme = theme;
 		this.config = config;
@@ -807,7 +808,10 @@ class SettingsUi implements SettingsUiHandle {
 	private applySetting(item: SettingItem): void {
 		this.selectedItemByTab[this.tab] = item.id;
 		if (item.id === "theme" && this.tab === "icons") {
-			this.onExternalAction(item.id);
+			// External mutation returns the new display value; refresh so the
+			// item label tracks the switched theme.
+			this.themeName = this.onExternalAction(item.id);
+			this.invalidate();
 			return;
 		}
 		this.config = handleSettingChange(this.tab, item, this.config);
@@ -1042,12 +1046,13 @@ export function registerSettingsCommand(pi: ExtensionAPI): void {
 					() => done(undefined),
 					() => (s: string) => theme.fg("accent", s),
 					(itemId) => {
-						if (itemId !== "theme") return;
+						if (itemId !== "theme") return "";
 						const presets = ["pi-accent", "pi-purple", "dark"] as const;
 						const currentName = (ctx.ui.theme as { name?: string }).name ?? "dark";
 						const idx = presets.indexOf(currentName as (typeof presets)[number]);
 						const nextName = presets[(idx + 1) % presets.length] ?? presets[0];
 						ctx.ui.setTheme(nextName);
+						return nextName;
 					},
 				);
 				return {
