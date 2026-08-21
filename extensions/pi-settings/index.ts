@@ -35,13 +35,16 @@ interface SettingItem {
 	id: string;
 	label: string;
 	currentValue: string;
+	/** Which config block this item mutates. Only needed on the merged Metrics tab
+	 * (speed/telemetry share it); other tabs infer from their own handler. */
+	kind?: "speed" | "telemetry";
 	/** Explanation shown under the selected item, so each toggle reads clearly. */
 	description?: string;
 }
 
-type Tab = "features" | "icons" | "segments" | "speed" | "telemetry";
+type Tab = "features" | "icons" | "segments" | "metrics";
 
-const TABS: Tab[] = ["features", "icons", "segments", "speed", "telemetry"];
+const TABS: Tab[] = ["features", "icons", "segments", "metrics"];
 
 const COPY = {
 	en: {
@@ -50,8 +53,7 @@ const COPY = {
 			features: "General",
 			icons: "Appearance",
 			segments: "Footer",
-			speed: "Speed",
-			telemetry: "Telemetry",
+			metrics: "Metrics",
 		},
 		hint:
 			"Tab/Shift+Tab/←/→: tabs · ↑/↓: move · Enter/Space: change · Esc/q: close",
@@ -83,6 +85,7 @@ const COPY = {
 			tokenCounts: "Token counts",
 			stallDetails: "Stall details",
 			costRate: "Cost rate",
+			routerSpec: "Router spec (recon mode)",
 		},
 		descriptions: {
 			enabled: "Master switch for the whole pi-tui UI",
@@ -117,6 +120,7 @@ const COPY = {
 			cost: "Session cost in USD",
 			cacheHit: "DeepSeek cache-hit share (cacheRead ÷ billed input)",
 			extensionStatuses: "Status line from other loaded extensions",
+			routerSpec: "First-round read+bash recon before full continuation",
 		},
 		values: {
 			on: "On",
@@ -140,8 +144,7 @@ const COPY = {
 			features: "常规",
 			icons: "外观",
 			segments: "Footer",
-			speed: "速度",
-			telemetry: "遥测",
+			metrics: "指标",
 		},
 		hint: "Tab/Shift+Tab/←/→：切页 · ↑/↓：移动 · Enter/Space：更改 · Esc/q：关闭",
 		labels: {
@@ -172,6 +175,7 @@ const COPY = {
 			tokenCounts: "Token 数量",
 			stallDetails: "停顿详情",
 			costRate: "费用速率",
+			routerSpec: "Router spec（侦察模式）",
 		},
 		descriptions: {
 			enabled: "整个 pi-tui 界面的总开关",
@@ -203,6 +207,7 @@ const COPY = {
 			cost: "会话费用（美元）",
 			cacheHit: "DeepSeek 缓存命中率（cacheRead ÷ 计费输入）",
 			extensionStatuses: "其他已加载扩展的状态行",
+			routerSpec: "首轮 read+bash 侦察，再全量续跑",
 		},
 		values: {
 			on: "开启",
@@ -264,6 +269,13 @@ function toggleLanguage(config: PiTuiConfig): PiTuiConfig {
 	return {
 		...config,
 		settingsLanguage: config.settingsLanguage === "en" ? "zh" : "en",
+	};
+}
+
+function toggleRouterSpec(config: PiTuiConfig): PiTuiConfig {
+	return {
+		...config,
+		modules: { ...config.modules, routerSpec: !config.modules.routerSpec },
 	};
 }
 
@@ -386,6 +398,12 @@ function buildFeaturesItems(
 			currentValue: copy.values.wheelLines(config.fullscreen.wheelScrollLines),
 			description: d.wheelScrollLines,
 		},
+		{
+			id: "routerSpec",
+			label: copy.labels.routerSpec,
+			currentValue: config.modules.routerSpec ? copy.values.on : copy.values.off,
+			description: d.routerSpec,
+		},
 	];
 }
 
@@ -500,48 +518,56 @@ function buildSpeedItems(
 			label: copy.labels.enabled,
 			currentValue: flag(speed.enabled),
 			description: d.enabled,
+			kind: "speed",
 		},
 		{
 			id: "working",
 			label: copy.labels.speedWorking,
 			currentValue: flag(speed.working),
 			description: d.speedWorking,
+			kind: "speed",
 		},
 		{
 			id: "label",
 			label: copy.labels.speedLabel,
 			currentValue: speed.label,
 			description: d.speedLabel,
+			kind: "speed",
 		},
 		{
 			id: "slidingWindowMs",
 			label: copy.labels.speedSlidingWindow,
 			currentValue: copy.values.ms(speed.slidingWindowMs),
 			description: d.speedSlidingWindow,
+			kind: "speed",
 		},
 		{
 			id: "renderIntervalMs",
 			label: copy.labels.speedRenderInterval,
 			currentValue: copy.values.ms(speed.renderIntervalMs),
 			description: d.speedRenderInterval,
+			kind: "speed",
 		},
 		{
 			id: "maxDisplayTokS",
 			label: copy.labels.speedMaxDisplay,
 			currentValue: copy.values.ms(speed.maxDisplayTokS),
 			description: d.speedMaxDisplay,
+			kind: "speed",
 		},
 		{
 			id: "useProviderTokens",
 			label: copy.labels.speedProviderTokens,
 			currentValue: flag(speed.useProviderTokens),
 			description: d.speedProviderTokens,
+			kind: "speed",
 		},
 		{
 			id: "countStrategy",
 			label: copy.labels.speedCountStrategy,
 			currentValue: copy.values.countStrategies[speed.countStrategy],
 			description: d.speedCountStrategy,
+			kind: "speed",
 		},
 	];
 }
@@ -559,43 +585,61 @@ function buildTelemetryItems(
 			label: copy.labels.enabled,
 			currentValue: flag(telemetry.enabled),
 			description: d.enabled,
+			kind: "telemetry",
 		},
 		{
 			id: "tps",
 			label: "TPS",
 			currentValue: flag(telemetry.tps),
 			description: d.tps,
+			kind: "telemetry",
 		},
 		{
 			id: "ttft",
 			label: "TTFT",
 			currentValue: flag(telemetry.ttft),
 			description: d.ttft,
+			kind: "telemetry",
 		},
 		{
 			id: "duration",
 			label: copy.labels.totalDuration,
 			currentValue: flag(telemetry.duration),
 			description: d.totalDuration,
+			kind: "telemetry",
 		},
 		{
 			id: "tokens",
 			label: copy.labels.tokenCounts,
 			currentValue: flag(telemetry.tokens),
 			description: d.tokenCounts,
+			kind: "telemetry",
 		},
 		{
 			id: "stalls",
 			label: copy.labels.stallDetails,
 			currentValue: flag(telemetry.stalls),
 			description: d.stallDetails,
+			kind: "telemetry",
 		},
 		{
 			id: "cost",
 			label: copy.labels.costRate,
 			currentValue: flag(telemetry.cost),
 			description: d.costRate,
+			kind: "telemetry",
 		},
+	];
+}
+
+/** Merged Metrics tab: live-speed tuning first, then per-turn telemetry. */
+function buildMetricsItems(
+	config: PiTuiConfig,
+	copy: SettingsCopy,
+): SettingItem[] {
+	return [
+		...buildSpeedItems(config, copy),
+		...buildTelemetryItems(config, copy),
 	];
 }
 
@@ -608,22 +652,22 @@ function buildItems(tab: Tab, config: PiTuiConfig): SettingItem[] {
 			return buildIconsItems(config, copy);
 		case "segments":
 			return buildSegmentsItems(config, copy);
-		case "speed":
-			return buildSpeedItems(config, copy);
-		case "telemetry":
-			return buildTelemetryItems(config, copy);
+		case "metrics":
+			return buildMetricsItems(config, copy);
 	}
 }
 
 function handleSettingChange(
 	tab: Tab,
-	itemId: string,
+	item: SettingItem,
 	config: PiTuiConfig,
 ): PiTuiConfig {
+	const itemId = item.id;
 	if (tab === "features") {
 		if (itemId === "enabled") return toggleEnabled(config);
 		if (itemId === "settingsLanguage") return toggleLanguage(config);
 		if (itemId === "wheelScrollLines") return cycleWheelScrollLines(config);
+		if (itemId === "routerSpec") return toggleRouterSpec(config);
 	}
 	if (tab === "icons") {
 		if (itemId === "mode") return cycleIconMode(config);
@@ -632,28 +676,31 @@ function handleSettingChange(
 	if (tab === "segments") {
 		return toggleSetting(config, itemId as keyof PiTuiConfig["footerSegments"]);
 	}
-	if (tab === "speed") {
-		switch (itemId) {
-			case "enabled":
-				return toggleSpeedSetting(config, "enabled");
-			case "working":
-				return toggleSpeedSetting(config, "working");
-			case "label":
-				return cycleSpeedLabel(config);
-			case "slidingWindowMs":
-				return cycleSpeedSlidingWindow(config);
-			case "renderIntervalMs":
-				return cycleSpeedRenderInterval(config);
-			case "maxDisplayTokS":
-				return cycleSpeedMaxDisplay(config);
-			case "useProviderTokens":
-				return toggleSpeedSetting(config, "useProviderTokens");
-			case "countStrategy":
-				return cycleSpeedCountStrategy(config);
+	if (tab === "metrics") {
+		// Merged tab: dispatch by the item's kind (speed vs telemetry).
+		if (item.kind === "speed") {
+			switch (itemId) {
+				case "enabled":
+					return toggleSpeedSetting(config, "enabled");
+				case "working":
+					return toggleSpeedSetting(config, "working");
+				case "label":
+					return cycleSpeedLabel(config);
+				case "slidingWindowMs":
+					return cycleSpeedSlidingWindow(config);
+				case "renderIntervalMs":
+					return cycleSpeedRenderInterval(config);
+				case "maxDisplayTokS":
+					return cycleSpeedMaxDisplay(config);
+				case "useProviderTokens":
+					return toggleSpeedSetting(config, "useProviderTokens");
+				case "countStrategy":
+					return cycleSpeedCountStrategy(config);
+			}
 		}
-	}
-	if (tab === "telemetry") {
-		return toggleTelemetry(config, itemId as keyof PiTuiConfig["telemetry"]);
+		if (item.kind === "telemetry") {
+			return toggleTelemetry(config, itemId as keyof PiTuiConfig["telemetry"]);
+		}
 	}
 	return config;
 }
@@ -704,9 +751,9 @@ class SettingsUi implements SettingsUiHandle {
 		this.selectedIndex = idx >= 0 ? idx : 0;
 	}
 
-	private applySetting(itemId: string): void {
-		this.selectedItemByTab[this.tab] = itemId;
-		this.config = handleSettingChange(this.tab, itemId, this.config);
+	private applySetting(item: SettingItem): void {
+		this.selectedItemByTab[this.tab] = item.id;
+		this.config = handleSettingChange(this.tab, item, this.config);
 		this.onChange(this.config);
 		this.invalidate();
 	}
@@ -780,7 +827,7 @@ class SettingsUi implements SettingsUiHandle {
 			data === " "
 		) {
 			const item = this.items()[this.selectedIndex];
-			if (item) this.applySetting(item.id);
+			if (item) this.applySetting(item);
 			return;
 		}
 		this.invalidate();

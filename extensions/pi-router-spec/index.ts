@@ -2,6 +2,7 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { getConfig, subscribeConfig } from "../../shared/pi-tui-store.js";
 
 /**
  * pi-router-spec —— 首轮 Recon 侦察（read + bash）→ 全量续跑
@@ -129,7 +130,14 @@ export default function piRouterSpec(pi: ExtensionAPI): void {
 	// §4.5 内存标志（tool_call 双保险用）
 	let reconActive = false;
 
+	const enabled = () => {
+		const c = getConfig();
+		return c.enabled && c.modules.routerSpec;
+	};
+
 	pi.on("before_provider_request", (event, ctx) => {
+		if (!enabled()) return undefined;
+
 		const payload = event.payload;
 		const body = (
 			typeof payload === "object" && payload !== null ? payload : {}
@@ -194,6 +202,12 @@ export default function piRouterSpec(pi: ExtensionAPI): void {
 			return { block: true, reason: "recon phase: only read/bash allowed" };
 		}
 		return undefined;
+	});
+
+	subscribeConfig(() => {
+		// Re-read config on demand; disabling routerSpec anywhere clears the
+		// in-flight recon flag so no stale gate survives the toggle.
+		if (!enabled()) reconActive = false;
 	});
 
 	// §4.5 兜底清除标志, 防止泄漏到下一轮
