@@ -28,6 +28,8 @@ export interface EngineOptions {
 export interface CompletedMessageSpeed {
 	outputTokens: number;
 	durationMs: number;
+	/** The estimator's count before authoritative reconcile; also in `tokenCount`. */
+	estimatedTokens: number;
 	/** Sanitized tokens-per-second for the completed assistant message, or null. */
 	tokS: number | null;
 }
@@ -199,6 +201,15 @@ export class SpeedTracker {
 		return this.lastStableTokS;
 	}
 
+	/** Estimated tokens for the current message BEFORE reconcile — the number
+	 * the live display was actually using. `finishMessage` replaces the
+	 * usable count with the authoritative usage.output, so this cannot be
+	 * read after finishMessage.
+	 */
+	get estimatedTokenCount(): number {
+		return this.engine.tokenCount;
+	}
+
 	resetSession(): void {
 		this.sessionOutputTokens = 0;
 		this.sessionDurationMs = 0;
@@ -232,6 +243,7 @@ export class SpeedTracker {
 		stopReason: string | undefined,
 	): CompletedMessageSpeed | null {
 		if (!this.engine.isStreaming) return null;
+		const estimated = this.engine.tokenCount;
 		this.engine.reconcileTotal(outputTokens);
 		const durationMs = this.engine.elapsedMs;
 		const tokens = this.engine.tokenCount;
@@ -244,6 +256,6 @@ export class SpeedTracker {
 			this.sessionOutputTokens += tokens;
 			this.sessionDurationMs += durationMs;
 		}
-		return { outputTokens: tokens, durationMs, tokS };
+		return { outputTokens: tokens, estimatedTokens: estimated, durationMs, tokS };
 	}
 }

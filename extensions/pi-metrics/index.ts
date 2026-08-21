@@ -8,14 +8,17 @@ import {
 	getConfig,
 	getSpeedTracker,
 	getSessionMetrics,
-	subscribeConfig,
 } from "../../shared/pi-tui-store.js";
 import {
 	SessionMetricsAccumulator,
 	TurnMetricsAccumulator,
-	type SessionMetrics,
 	type TurnTelemetry,
 } from "../../shared/metrics.js";
+import {
+	calibrateTokS,
+	foldCalibration,
+	loadCalibration,
+} from "../../shared/calibration.js";
 import { resolveGlyphs } from "../../shared/icons.js";
 import { fmtTokens } from "../../shared/utils.js";
 
@@ -129,6 +132,10 @@ export default function piMetrics(pi: ExtensionAPI): void {
 	const turnAcc = new TurnMetricsAccumulator();
 	const sessionAcc = new SessionMetricsAccumulator();
 
+	// Calibration between estimated live tokens and the provider's authoritative
+	// usage.output. Loaded once per session; folded at each message_end.
+	const calibration = loadCalibration();
+
 	let workTimer: ReturnType<typeof setInterval> | undefined;
 
 	function stopWorkTimer() {
@@ -163,7 +170,8 @@ export default function piMetrics(pi: ExtensionAPI): void {
 				if (!current.speed.working) ctx.ui.setWorkingMessage();
 				return;
 			}
-			renderWorking(ctx, tracker.liveTokS());
+			// Rescale the live estimate toward the authoritative tokenizer count.
+			renderWorking(ctx, calibrateTokS(tracker.liveTokS(), calibration));
 		}, config.speed.renderIntervalMs);
 	}
 
@@ -225,7 +233,12 @@ export default function piMetrics(pi: ExtensionAPI): void {
 				? ((event.message.usage as { output?: number }).output ?? 0)
 				: 0;
 		const stopReason = (event.message as { stopReason?: string }).stopReason;
-		tracker.finishMessage(usageOutput, stopReason);
+		const completed = tracker.finishMessage(usageOutput, stopReason);
+		// Fold the estimate→authoritative ratio in place so the NEXT live stream
+		// is rescaled toward the provider's tokenizer count.
+		if (completed && completed.estimatedTokens > 0 && usageOutput > 0) {
+			foldCalibration(calibration, completed.estimatedTokens, usageOutput);
+		}
 		turnAcc.onMessageEnd(event.message);
 		stopWorkTimer();
 		renderWorking(ctx, tracker.lastTokS);
@@ -286,10 +299,23 @@ export default function piMetrics(pi: ExtensionAPI): void {
 		if (isTuiContext(ctx)) ctx.ui.setWorkingMessage();
 	});
 
-	subscribeConfig(() => {
-		// config re-read on demand in every handler/tick.
+	// ---- calibration debug -------
+	pi.registerCommand("pi-metrics-debug", {
+		description: "Show calibration between estimated and provider tokens",
+		handler: async (_args, ctx: ExtensionContext) => {
+			if (!ctx.hasUI) return;
+			const state = loadCalibration();
+			const lines = [
+				`Calibration scale: ${state.scale.toFixed(3)}`,
+				`Samples: ${state.samples}`,
+				"",
+			];
+			for (const s of state.recent.slice(-5)) {
+				lines.push(
+					`est ${s.estimatedTokens} vs usage ${s.usageOutput} → scale ${s.scale.toFixed(2)}`,
+				);
+			}
+			ctx.ui.notify(lines.join("\n"), "info");
+		},
 	});
-
-	// Keep unused export happy (SessionMetrics imported for type clarity in docs).
-	void ({} as SessionMetrics | undefined);
 }
