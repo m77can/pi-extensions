@@ -3,15 +3,7 @@ import type {
 	ExtensionContext,
 	Theme,
 } from "@earendil-works/pi-coding-agent";
-import {
-	Box,
-	Key,
-	matchesKey,
-	SelectList,
-	type SelectItem,
-	type TUI,
-	Text,
-} from "@earendil-works/pi-tui";
+import { Key, matchesKey, type TUI } from "@earendil-works/pi-tui";
 import type { PiTuiConfig, SettingsLanguage } from "../../shared/config.js";
 import {
 	getConfig,
@@ -20,6 +12,12 @@ import {
 	requestFooterRender,
 	getEditorControls,
 } from "../../shared/pi-tui-store.js";
+import {
+	alignRight,
+	padRight,
+	truncateToWidth,
+	visibleWidth,
+} from "../../shared/utils.js";
 
 const WHEEL_SCROLL_PRESETS = [1, 4, 7, 10] as const;
 const SPEED_LABEL_PRESETS = ["tok/s", "tokens/s", "tps"] as const;
@@ -544,9 +542,8 @@ interface SettingsUiHandle {
 class SettingsUi implements SettingsUiHandle {
 	private tab: Tab = "features";
 	private config: PiTuiConfig;
-	private selectList: SelectList;
+	private selectedIndex = 0;
 	private readonly selectedItemByTab: Partial<Record<Tab, string>> = {};
-	private readonly container: Box;
 	private readonly theme: Theme;
 	private readonly onChange: (config: PiTuiConfig) => void;
 	private readonly onClose: () => void;
@@ -564,102 +561,99 @@ class SettingsUi implements SettingsUiHandle {
 		this.config = config;
 		this.onChange = onChange;
 		this.onClose = onClose;
-		this.container = new Box(1, 1, (s: string) => theme.bg("customMessageBg", s));
-		this.selectList = new SelectList([], 12, {
-			selectedPrefix: (t) => theme.fg("accent", t),
-			selectedText: (t) => theme.fg("accent", t),
-			description: (t) => theme.fg("muted", t),
-			scrollInfo: (t) => theme.fg("dim", t),
-			noMatch: (t) => theme.fg("warning", t),
-		});
-		this.rebuild();
+		this.restoreSelection();
+	}
+
+	private items(): SettingItem[] {
+		return buildItems(this.tab, this.config);
+	}
+
+	private restoreSelection(): void {
+		const preferred = this.selectedItemByTab[this.tab];
+		const idx = preferred
+			? this.items().findIndex((i) => i.id === preferred)
+			: 0;
+		this.selectedIndex = idx >= 0 ? idx : 0;
 	}
 
 	private applySetting(itemId: string): void {
 		this.selectedItemByTab[this.tab] = itemId;
 		this.config = handleSettingChange(this.tab, itemId, this.config);
 		this.onChange(this.config);
-		this.rebuild(itemId);
+		this.invalidate();
 	}
 
 	private switchTab(offset: number): void {
 		const idx = TABS.indexOf(this.tab);
 		this.tab = TABS[(idx + offset + TABS.length) % TABS.length]!;
-		this.rebuild();
+		this.restoreSelection();
+		this.invalidate();
 	}
 
-	private rebuild(preferredItemId = this.selectedItemByTab[this.tab]): void {
-		const copy = COPY[this.config.settingsLanguage];
-		this.container.clear();
-		this.container.addChild(
-			new Text(this.theme.bold(this.theme.fg("accent", copy.title)), 1, 0),
-		);
+	private move(offset: number): void {
+		const n = this.items().length;
+		if (n === 0) return;
+		this.selectedIndex = (this.selectedIndex + offset + n) % n;
+		this.selectedItemByTab[this.tab] = this.items()[this.selectedIndex]?.id;
+		this.invalidate();
+	}
 
-		const tabBar = TABS.map((tab) => {
-			const active = tab === this.tab;
-			const label = active ? `[${copy.tabs[tab]}]` : ` ${copy.tabs[tab]} `;
-			return active ? this.theme.fg("accent", label) : this.theme.fg("dim", label);
-		}).join(" ");
-		this.container.addChild(new Text(tabBar, 1, 0));
-		this.container.addChild(new Text(this.theme.fg("dim", copy.hint), 1, 0));
-
-		const items = buildItems(this.tab, this.config).map(
-			(item) =>
-				({
-					value: item.id,
-					label: this.compact ? `${item.label}: ${item.currentValue}` : item.label,
-					description: this.compact ? undefined : item.currentValue,
-				}) as SelectItem,
-		);
-		this.selectList = new SelectList(items, Math.min(items.length, 10), {
-			selectedPrefix: (t) => this.theme.fg("accent", t),
-			selectedText: (t) => this.theme.fg("accent", t),
-			description: (t) => this.theme.fg("muted", t),
-			scrollInfo: (t) => this.theme.fg("dim", t),
-			noMatch: (t) => this.theme.fg("warning", t),
-		});
-		const selectedIndex = items.findIndex(
-			(item) => item.value === preferredItemId,
-		);
-		if (selectedIndex >= 0) {
-			this.selectList.setSelectedIndex(selectedIndex);
+	private borderLine(
+		left: string,
+		label: string,
+		right: string,
+		width: number,
+	): string {
+		const paint = (s: string) => this.theme.fg("accent", s);
+		if (width <= 1) return "";
+		if (label.length === 0 || width < 8) {
+			return paint(
+				truncateToWidth(
+					left + "─".repeat(Math.max(0, width - 2)) + right,
+					width,
+					"",
+				),
+			);
 		}
-		this.selectedItemByTab[this.tab] = this.selectList.getSelectedItem()?.value;
-		this.selectList.onSelectionChange = (item) => {
-			this.selectedItemByTab[this.tab] = item.value;
-		};
-		this.selectList.onSelect = (item) => {
-			this.applySetting(item.value);
-		};
-		this.selectList.onCancel = () => {
-			this.onClose();
-		};
-		this.container.addChild(this.selectList);
+		const fill = Math.max(0, width - 2 - visibleWidth(label) - 2);
+		return `${paint(left)}${paint(" ")}${label}${paint(" ")}${paint("─".repeat(fill))}${paint(right)}`;
+	}
 
-		this.cachedWidth = undefined;
-		this.cachedLines = undefined;
+	private boxLine(content: string, width: number): string {
+		const paint = (s: string) => this.theme.fg("accent", s);
+		if (width <= 2) return truncateToWidth(content, width, "");
+		return `${paint("│")}${padRight(content, width - 2)}${paint("│")}`;
 	}
 
 	handleInput(data: string): void {
 		if (matchesKey(data, Key.tab) || matchesKey(data, Key.right)) {
 			this.switchTab(1);
-			this.invalidate();
 			return;
 		}
 		if (matchesKey(data, Key.shift("tab")) || matchesKey(data, Key.left)) {
 			this.switchTab(-1);
-			this.invalidate();
 			return;
 		}
 		if (matchesKey(data, Key.escape) || matchesKey(data, "q")) {
 			this.onClose();
 			return;
 		}
-		if (matchesKey(data, Key.space) || data === " ") {
-			const selected = this.selectList.getSelectedItem();
-			if (selected) this.applySetting(selected.value);
-		} else {
-			this.selectList.handleInput?.(data);
+		if (matchesKey(data, Key.up)) {
+			this.move(-1);
+			return;
+		}
+		if (matchesKey(data, Key.down)) {
+			this.move(1);
+			return;
+		}
+		if (
+			matchesKey(data, Key.enter) ||
+			matchesKey(data, Key.space) ||
+			data === " "
+		) {
+			const item = this.items()[this.selectedIndex];
+			if (item) this.applySetting(item.id);
+			return;
 		}
 		this.invalidate();
 	}
@@ -668,18 +662,102 @@ class SettingsUi implements SettingsUiHandle {
 		const compact = width <= 60;
 		if (compact !== this.compact) {
 			this.compact = compact;
-			this.rebuild();
+			this.invalidate();
 		}
 		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
+
+		const theme = this.theme;
+		const copy = COPY[this.config.settingsLanguage];
+		const paint = (s: string) => theme.fg("accent", s);
+		const dim = (s: string) => theme.fg("dim", s);
+		const muted = (s: string) => theme.fg("muted", s);
+		const bold = (s: string) => theme.bold(s);
+
+		if (width < 12) return [paint(`pi-tui`)];
+
+		const innerWidth = Math.max(0, width - 2);
+		const items = this.items();
+		const maxVisible = Math.max(3, Math.min(items.length, 12));
+
+		// Clamp selectedIndex into range and compute scroll window.
+		if (this.selectedIndex >= items.length) this.selectedIndex = items.length - 1;
+		if (this.selectedIndex < 0) this.selectedIndex = 0;
+		let start = 0;
+		if (this.selectedIndex >= maxVisible) {
+			start = this.selectedIndex - maxVisible + 1;
+		}
+		const visibleItems = items.slice(start, start + maxVisible);
+
+		const lines: string[] = [];
+
+		// Top border carries the title (matches pi-header's border style).
+		lines.push(
+			this.borderLine(
+				"╭",
+				` ${paint(bold("pi-tui"))} ${muted(copy.title)} `,
+				"╮",
+				width,
+			),
+		);
+
+		// Tab bar (active tab accent-bracketed, others dim).
+		const tabBar = TABS.map((t) => {
+			const label = copy.tabs[t];
+			return t === this.tab ? paint(bold(`[${label}]`)) : dim(` ${label} `);
+		}).join(" ");
+		lines.push(this.boxLine(truncateToWidth(tabBar, innerWidth), width));
+
+		// Separator.
+		lines.push(
+			this.boxLine(dim("─".repeat(Math.max(0, innerWidth))), width),
+		);
+
+		// Items: selected row accent-bracketed, value right-aligned (footer style).
+		for (const item of visibleItems) {
+			const isSel = item.id === items[this.selectedIndex]?.id;
+			const prefix = isSel ? paint("▸ ") : "  ";
+			const label = isSel ? paint(bold(item.label)) : item.label;
+			if (this.compact) {
+				lines.push(
+					this.boxLine(
+						truncateToWidth(
+							`${prefix}${label}: ${item.currentValue}`,
+							innerWidth,
+						),
+						width,
+					),
+				);
+			} else {
+				const lineInner = alignRight(
+					`${prefix}${label}`,
+					muted(item.currentValue),
+					innerWidth,
+					theme,
+				);
+				lines.push(this.boxLine(lineInner, width));
+			}
+		}
+
+		// Scroll info when the tab has more items than fit.
+		if (items.length > maxVisible) {
+			const scroll = dim(`${start + 1}-${start + visibleItems.length} / ${items.length}`);
+			lines.push(this.boxLine(alignRight("", scroll, innerWidth, theme), width));
+		}
+
+		// Hint line (dim), then bottom border.
+		lines.push(
+			this.boxLine(dim(truncateToWidth(copy.hint, innerWidth)), width),
+		);
+		lines.push(this.borderLine("╰", "", "╯", width));
+
 		this.cachedWidth = width;
-		this.cachedLines = this.container.render(width);
+		this.cachedLines = lines.map((l) => truncateToWidth(l, width, ""));
 		return this.cachedLines;
 	}
 
 	invalidate(): void {
 		this.cachedWidth = undefined;
 		this.cachedLines = undefined;
-		this.container.invalidate();
 	}
 }
 
