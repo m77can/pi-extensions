@@ -133,7 +133,9 @@ export class PiEditor extends CustomEditor {
 				return self.wrappedSubmit ?? self.piSubmit;
 			},
 			set(fn: ((text: string) => Promise<void>) | undefined) {
-				(self as unknown as { piSubmit?: (text: string) => Promise<void> }).piSubmit = fn;
+				(
+					self as unknown as { piSubmit?: (text: string) => Promise<void> }
+				).piSubmit = fn;
 				if (setter) {
 					setter.call(self, fn);
 				}

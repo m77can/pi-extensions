@@ -768,9 +768,7 @@ class SettingsUi implements SettingsUiHandle {
 
 	private items(): SettingItem[] {
 		return buildItems(this.tab, this.config).map((item) =>
-			item.id === "theme"
-				? { ...item, currentValue: this.themeName }
-				: item,
+			item.id === "theme" ? { ...item, currentValue: this.themeName } : item,
 		);
 	}
 
@@ -1036,9 +1034,7 @@ export function registerSettingsCommand(pi: ExtensionAPI): void {
 						if (itemId !== "theme") return;
 						const presets = ["pi-accent", "pi-purple", "dark"] as const;
 						const currentName = (ctx.ui.theme as { name?: string }).name ?? "dark";
-						const idx = presets.indexOf(
-							currentName as (typeof presets)[number],
-						);
+						const idx = presets.indexOf(currentName as (typeof presets)[number]);
 						const nextName = presets[(idx + 1) % presets.length] ?? presets[0];
 						ctx.ui.setTheme(nextName);
 					},
@@ -1077,14 +1073,10 @@ export function registerSettingsCommand(pi: ExtensionAPI): void {
 		},
 	});
 
-	// Extension commands run before built-in slash handlers, so this replaces
-	// the framework's double-line /settings panel with the rounded one.
-	pi.registerCommand("settings", {
-		description: "Open the Pi TUI settings UI",
-		handler: async (_args, ctx: ExtensionContext) => {
-			await openPanel(ctx);
-		},
-	});
+	// /settings hijack: don't registerCommand("settings") — that conflicts with
+	// pi's built-in command and emits an autocomplete warning. The override
+	// happens in the pi-editor onSubmit wrapper instead, which intercepts the
+	// raw text before the framework's hard-coded dispatch.
 }
 
 export default function piSettings(pi: ExtensionAPI): void {
