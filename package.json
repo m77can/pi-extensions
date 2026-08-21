@@ -1,6 +1,6 @@
 {
 	"name": "pi-extensions",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "A modular TUI and tool collection for Pi: header, editor, footer, live speed, telemetry, settings, and router-spec.",
 	"type": "module",
 	"license": "MIT",
