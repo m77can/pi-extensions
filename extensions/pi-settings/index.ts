@@ -3,7 +3,12 @@ import type {
 	ExtensionContext,
 	Theme,
 } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, wrapTextWithAnsi, type TUI } from "@earendil-works/pi-tui";
+import {
+	Key,
+	matchesKey,
+	wrapTextWithAnsi,
+	type TUI,
+} from "@earendil-works/pi-tui";
 import type { PiTuiConfig, SettingsLanguage } from "../../shared/config.js";
 import {
 	getConfig,
@@ -87,8 +92,7 @@ const COPY = {
 			speedSlidingWindow:
 				"Live speed is averaged over this recent window (larger = smoother)",
 			speedRenderInterval: "How often the live speed refreshes on screen",
-			speedMaxDisplay:
-				"Speeds above this are treated as artifacts and hidden",
+			speedMaxDisplay: "Speeds above this are treated as artifacts and hidden",
 			speedProviderTokens:
 				"Prefer the model's reported token count over local estimation",
 			speedCountStrategy:
@@ -99,6 +103,22 @@ const COPY = {
 			tokenCounts: "Input / output tokens for the turn",
 			stallDetails: "Time lost to stalls ≥ 500ms (inference pauses)",
 			costRate: "Price per million tokens",
+			settingsLanguage: "Interface language for the settings panel",
+			wheelScrollLines: "Lines scrolled per mouse-wheel notch in fullscreen",
+			iconMode: "Nerd Font icons vs ASCII glyphs (auto-detects terminal)",
+			cursorStyle: "Shape of the text cursor in the editor",
+			cwd: "Working directory shown on the footer left",
+			sessionName: "Session name next to the CWD",
+			gitBranch: "Current branch name (or detached HEAD)",
+			gitStatus: "Modified/staged/untracked/conflict counts",
+			gitCommit: "Short hash + tag when in detached HEAD",
+			runtime: "Detected language runtime (node/rust/go/...)",
+			context: "Context occupancy bar and percentage",
+			tokens: "Input / output token counts",
+			cost: "Session cost in USD",
+			speedSegment: "Session-average decode throughput (tok/s)",
+			cacheHit: "DeepSeek cache-hit share (cacheRead ÷ billed input)",
+			extensionStatuses: "Status line from other loaded extensions",
 		},
 		values: {
 			on: "On",
@@ -171,6 +191,22 @@ const COPY = {
 			tokenCounts: "本轮的输入 / 输出 token 数",
 			stallDetails: "≥500ms 的停顿（推理暂停）占用的时间",
 			costRate: "每百万 token 的价格",
+			settingsLanguage: "设置面板的界面语言",
+			wheelScrollLines: "全屏模式下每次滚动滚轮的行数",
+			iconMode: "Nerd Font 图标 vs ASCII 符号（自动检测终端）",
+			cursorStyle: "编辑器里文本光标的形状",
+			cwd: "Footer 左侧显示的工作目录",
+			sessionName: "当前目录旁边的会话名",
+			gitBranch: "当前分支名（或分离 HEAD）",
+			gitStatus: "已修改/已暂存/未跟踪/冲突计数",
+			gitCommit: "分离 HEAD 时的短哈希 + 标签",
+			runtime: "检测到的语言运行时（node/rust/go/...）",
+			context: "上下文占用进度条和百分比",
+			tokens: "输入 / 输出 token 数",
+			cost: "会话费用（美元）",
+			speedSegment: "会话平均解码吞吐（tok/s）",
+			cacheHit: "DeepSeek 缓存命中率（cacheRead ÷ 计费输入）",
+			extensionStatuses: "其他已加载扩展的状态行",
 		},
 		values: {
 			on: "开启",
@@ -334,21 +370,25 @@ function buildFeaturesItems(
 	config: PiTuiConfig,
 	copy: SettingsCopy,
 ): SettingItem[] {
+	const d = copy.descriptions;
 	return [
 		{
 			id: "enabled",
 			label: copy.labels.enabled,
 			currentValue: config.enabled ? copy.values.on : copy.values.off,
+			description: d.enabled,
 		},
 		{
 			id: "settingsLanguage",
 			label: copy.labels.language,
 			currentValue: copy.values.languages[config.settingsLanguage],
+			description: d.settingsLanguage,
 		},
 		{
 			id: "wheelScrollLines",
 			label: copy.labels.wheelScrollLines,
 			currentValue: copy.values.wheelLines(config.fullscreen.wheelScrollLines),
+			description: d.wheelScrollLines,
 		},
 	];
 }
@@ -357,16 +397,19 @@ function buildIconsItems(
 	config: PiTuiConfig,
 	copy: SettingsCopy,
 ): SettingItem[] {
+	const d = copy.descriptions;
 	return [
 		{
 			id: "mode",
 			label: copy.labels.iconMode,
 			currentValue: copy.values.icons[config.icons.mode],
+			description: d.iconMode,
 		},
 		{
 			id: "cursorStyle",
 			label: copy.labels.cursorStyle,
 			currentValue: copy.values.cursorStyles[config.cursorStyle],
+			description: d.cursorStyle,
 		},
 	];
 }
@@ -377,54 +420,64 @@ function buildSegmentsItems(
 ): SettingItem[] {
 	const segs = config.footerSegments;
 	const flag = (value: boolean) => (value ? copy.values.on : copy.values.off);
+	const d = copy.descriptions;
 	return [
-		{ id: "cwd", label: copy.labels.cwd, currentValue: flag(segs.cwd) },
+		{ id: "cwd", label: copy.labels.cwd, currentValue: flag(segs.cwd), description: d.cwd },
 		{
 			id: "sessionName",
 			label: copy.labels.sessionName,
 			currentValue: flag(segs.sessionName),
+			description: d.sessionName,
 		},
 		{
 			id: "gitBranch",
 			label: copy.labels.gitBranch,
 			currentValue: flag(segs.gitBranch),
+			description: d.gitBranch,
 		},
 		{
 			id: "gitStatus",
 			label: copy.labels.gitStatus,
 			currentValue: flag(segs.gitStatus),
+			description: d.gitStatus,
 		},
 		{
 			id: "gitCommit",
 			label: copy.labels.gitCommit,
 			currentValue: flag(segs.gitCommit),
+			description: d.gitCommit,
 		},
 		{
 			id: "runtime",
 			label: copy.labels.runtime,
 			currentValue: flag(segs.runtime),
+			description: d.runtime,
 		},
 		{
 			id: "context",
 			label: copy.labels.context,
 			currentValue: flag(segs.context),
+			description: d.context,
 		},
-		{ id: "tokens", label: copy.labels.tokens, currentValue: flag(segs.tokens) },
-		{ id: "cost", label: copy.labels.cost, currentValue: flag(segs.cost) },
+		{ id: "tokens", label: copy.labels.tokens, currentValue: flag(segs.tokens), description: d.tokens },
+		{ id: "cost", label: copy.labels.cost, currentValue: flag(segs.cost), description: d.cost },
 		{
 			id: "speed",
 			label: copy.labels.speedSegment,
 			currentValue: flag(segs.speed),
+			description: d.speedSegment,
 		},
 		{
 			id: "cacheHit",
 			label: copy.labels.cacheHit,
 			currentValue: flag(segs.cacheHit),
+			description: d.cacheHit,
 		},
 		{
 			id: "extensionStatuses",
 			label: copy.labels.extensionStatuses,
 			currentValue: flag(segs.extensionStatuses),
+			description: d.extensionStatuses,
 		},
 	];
 }
