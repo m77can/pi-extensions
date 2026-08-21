@@ -1,8 +1,12 @@
 import {
-	getPackageDir,
+	DynamicBorder,
 	type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
-import { createRequire } from "node:module";
+import {
+	Container,
+	truncateToWidth,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
 import { getConfig } from "../../shared/pi-tui-store.js";
 
 /**
@@ -20,41 +24,19 @@ import { getConfig } from "../../shared/pi-tui-store.js";
  *   4. top/bottom draw ╭ ── ╮ / ╰ ── ╯, all colored through the border's own
  *      `color` fn so themes (border/warning/accent) keep working.
  *
- * `createRequire` resolves the exact dist file the kernel evaluates through
- * Node's native require cache — the class/registry we patch is the one pi
- * itself uses. (A jiti alias import would surface a separate cached copy.)
+ * Module identity note: top-level imports of `@earendil-works/pi-coding-agent`
+ * and `@earendil-works/pi-tui` resolve to the same module instances the pi
+ * kernel itself uses, so patching the exported prototypes here rewrites the
+ * classes pi actually constructs selectors/dialogs from. (Verified by probe
+ * against pi v0.84.2 — the jiti alias for pi-tui and the kernel's own import
+ * of it land on the same dist file.)
  */
 export default function piChrome(_pi: ExtensionAPI): void {
 	const config = getConfig();
 	if (!config.enabled || !config.chrome) return;
 
-	const agentPackage = getPackageDir();
-	const kernelBorderPath = `${agentPackage}/dist/modes/interactive/components/dynamic-border.js`;
-	const tuiPath = `${agentPackage}/node_modules/@earendil-works/pi-tui/dist/tui.js`;
-	const utilsPath = `${agentPackage}/node_modules/@earendil-works/pi-tui/dist/utils.js`;
-
-	const req = createRequire(import.meta.url);
-
-	let borderModule: { DynamicBorder: unknown };
-	let tuiModule: { Container: unknown };
-	let utilsModule: {
-		visibleWidth: (s: string) => number;
-		truncateToWidth: (s: string, w: number, ellipsis?: string) => string;
-	};
-	try {
-		borderModule = req(kernelBorderPath) as { DynamicBorder: unknown };
-		tuiModule = req(tuiPath) as { Container: unknown };
-		utilsModule = req(utilsPath) as typeof utilsModule;
-	} catch {
-		// best-effort: kernel layout moved across pi versions
-		return;
-	}
-
-	// SAFETY: dynamic require of kernel internals — shapes verified at runtime.
-	const borderClass = borderModule.DynamicBorder as { prototype: object };
-	const ContainerCtor = tuiModule.Container as {
-		prototype: { render: (width: number) => string[] };
-	};
+	const borderClass = DynamicBorder;
+	const ContainerCtor = Container;
 
 	const ContainerProto = ContainerCtor.prototype;
 	const originalRender = ContainerProto.render;
@@ -82,10 +64,10 @@ export default function piChrome(_pi: ExtensionAPI): void {
 		paint: (t: string) => string,
 	): string | null {
 		if (innerWidth < 0) return null;
-		const vis = utilsModule.visibleWidth(content);
+		const vis = visibleWidth(content);
 		const clipped =
 			vis > innerWidth
-				? utilsModule.truncateToWidth(content, innerWidth, "")
+				? truncateToWidth(content, innerWidth, "")
 				: content + " ".repeat(innerWidth - vis);
 		// Rails share the frame's own color fn — same shade and weight as the
 		// top/bottom borders, exactly like PiEditor's rail does.
