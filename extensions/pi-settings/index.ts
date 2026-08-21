@@ -3,7 +3,7 @@ import type {
 	ExtensionContext,
 	Theme,
 } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, type TUI } from "@earendil-works/pi-tui";
+import { Key, matchesKey, wrapTextWithAnsi, type TUI } from "@earendil-works/pi-tui";
 import type { PiTuiConfig, SettingsLanguage } from "../../shared/config.js";
 import {
 	getConfig,
@@ -30,6 +30,8 @@ interface SettingItem {
 	id: string;
 	label: string;
 	currentValue: string;
+	/** Explanation shown under the selected item, so each toggle reads clearly. */
+	description?: string;
 }
 
 type Tab = "features" | "icons" | "segments" | "speed" | "telemetry";
@@ -77,6 +79,26 @@ const COPY = {
 			tokenCounts: "Token counts",
 			stallDetails: "Stall details",
 			costRate: "Cost rate",
+		},
+		descriptions: {
+			enabled: "Master switch for the whole pi-tui UI",
+			speedWorking: "Live tok/s in the status line while streaming",
+			speedLabel: "Unit suffix shown after the speed number",
+			speedSlidingWindow:
+				"Live speed is averaged over this recent window (larger = smoother)",
+			speedRenderInterval: "How often the live speed refreshes on screen",
+			speedMaxDisplay:
+				"Speeds above this are treated as artifacts and hidden",
+			speedProviderTokens:
+				"Prefer the model's reported token count over local estimation",
+			speedCountStrategy:
+				"Estimate = word-ish split · Direct = 1 per delta · Chars÷4 = text length ÷ 4",
+			tps: "Decode throughput = output tokens ÷ (decode time − stalls)",
+			ttft: "Time to first token from request start",
+			totalDuration: "Total wall time of the turn",
+			tokenCounts: "Input / output tokens for the turn",
+			stallDetails: "Time lost to stalls ≥ 500ms (inference pauses)",
+			costRate: "Price per million tokens",
 		},
 		values: {
 			on: "On",
@@ -133,6 +155,22 @@ const COPY = {
 			tokenCounts: "Token 数量",
 			stallDetails: "停顿详情",
 			costRate: "费用速率",
+		},
+		descriptions: {
+			enabled: "整个 pi-tui 界面的总开关",
+			speedWorking: "流式过程中状态栏里显示的实时速度",
+			speedLabel: "速度数字后面显示的单位后缀",
+			speedSlidingWindow: "实时速度按最近这个窗口平均（越大越平滑）",
+			speedRenderInterval: "实时速度在屏幕上刷新的频率",
+			speedMaxDisplay: "超过这个速度视为异常并隐藏",
+			speedProviderTokens: "优先用模型上报的 token 数，而不是本地估算",
+			speedCountStrategy: "估算=词切分 · 直接=每个增量算 1 · 字符÷4=文本长度÷4",
+			tps: "解码吞吐 = 输出 token ÷（解码时间 − 停顿）",
+			ttft: "从请求开始到首个 token 的时间",
+			totalDuration: "本轮的总耗时",
+			tokenCounts: "本轮的输入 / 输出 token 数",
+			stallDetails: "≥500ms 的停顿（推理暂停）占用的时间",
+			costRate: "每百万 token 的价格",
 		},
 		values: {
 			on: "开启",
@@ -397,42 +435,55 @@ function buildSpeedItems(
 ): SettingItem[] {
 	const speed = config.speed;
 	const flag = (value: boolean) => (value ? copy.values.on : copy.values.off);
+	const d = copy.descriptions;
 	return [
 		{
 			id: "enabled",
 			label: copy.labels.enabled,
 			currentValue: flag(speed.enabled),
+			description: d.enabled,
 		},
 		{
 			id: "working",
 			label: copy.labels.speedWorking,
 			currentValue: flag(speed.working),
+			description: d.speedWorking,
 		},
-		{ id: "label", label: copy.labels.speedLabel, currentValue: speed.label },
+		{
+			id: "label",
+			label: copy.labels.speedLabel,
+			currentValue: speed.label,
+			description: d.speedLabel,
+		},
 		{
 			id: "slidingWindowMs",
 			label: copy.labels.speedSlidingWindow,
 			currentValue: copy.values.ms(speed.slidingWindowMs),
+			description: d.speedSlidingWindow,
 		},
 		{
 			id: "renderIntervalMs",
 			label: copy.labels.speedRenderInterval,
 			currentValue: copy.values.ms(speed.renderIntervalMs),
+			description: d.speedRenderInterval,
 		},
 		{
 			id: "maxDisplayTokS",
 			label: copy.labels.speedMaxDisplay,
 			currentValue: copy.values.ms(speed.maxDisplayTokS),
+			description: d.speedMaxDisplay,
 		},
 		{
 			id: "useProviderTokens",
 			label: copy.labels.speedProviderTokens,
 			currentValue: flag(speed.useProviderTokens),
+			description: d.speedProviderTokens,
 		},
 		{
 			id: "countStrategy",
 			label: copy.labels.speedCountStrategy,
 			currentValue: copy.values.countStrategies[speed.countStrategy],
+			description: d.speedCountStrategy,
 		},
 	];
 }
@@ -443,33 +494,49 @@ function buildTelemetryItems(
 ): SettingItem[] {
 	const telemetry = config.telemetry;
 	const flag = (value: boolean) => (value ? copy.values.on : copy.values.off);
+	const d = copy.descriptions;
 	return [
 		{
 			id: "enabled",
 			label: copy.labels.enabled,
 			currentValue: flag(telemetry.enabled),
+			description: d.enabled,
 		},
-		{ id: "tps", label: "TPS", currentValue: flag(telemetry.tps) },
-		{ id: "ttft", label: "TTFT", currentValue: flag(telemetry.ttft) },
+		{
+			id: "tps",
+			label: "TPS",
+			currentValue: flag(telemetry.tps),
+			description: d.tps,
+		},
+		{
+			id: "ttft",
+			label: "TTFT",
+			currentValue: flag(telemetry.ttft),
+			description: d.ttft,
+		},
 		{
 			id: "duration",
 			label: copy.labels.totalDuration,
 			currentValue: flag(telemetry.duration),
+			description: d.totalDuration,
 		},
 		{
 			id: "tokens",
 			label: copy.labels.tokenCounts,
 			currentValue: flag(telemetry.tokens),
+			description: d.tokenCounts,
 		},
 		{
 			id: "stalls",
 			label: copy.labels.stallDetails,
 			currentValue: flag(telemetry.stalls),
+			description: d.stallDetails,
 		},
 		{
 			id: "cost",
 			label: copy.labels.costRate,
 			currentValue: flag(telemetry.cost),
+			description: d.costRate,
 		},
 	];
 }
@@ -733,6 +800,19 @@ class SettingsUi implements SettingsUiHandle {
 					theme,
 				);
 				lines.push(this.boxLine(lineInner, width));
+			}
+		}
+
+		// Description panel for the selected item (dim, word-wrapped).
+		const selectedItem = items[this.selectedIndex];
+		if (selectedItem?.description) {
+			lines.push(this.boxLine(dim(" ".repeat(Math.max(0, innerWidth))), width));
+			const descWrapped = wrapTextWithAnsi(
+				dim(`ℹ ${selectedItem.description}`),
+				innerWidth,
+			);
+			for (const dl of descWrapped) {
+				lines.push(this.boxLine(padRight(dl, innerWidth), width));
 			}
 		}
 
