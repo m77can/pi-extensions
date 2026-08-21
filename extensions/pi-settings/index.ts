@@ -87,6 +87,7 @@ const COPY = {
 			tokenCounts: "Token counts",
 			stallDetails: "Stall details",
 			routerSpec: "Router spec (recon mode)",
+			chrome: "Rounded system panels",
 			speedEnabled: "Live speed enabled",
 			speedGroup: "Live speed",
 			telemetryGroup: "Per-turn telemetry",
@@ -124,6 +125,8 @@ const COPY = {
 			cacheHit: "DeepSeek cache-hit share (cacheRead ÷ billed input)",
 			extensionStatuses: "Status line from other loaded extensions",
 			routerSpec: "First-round read+bash recon before full continuation",
+			chrome:
+				"Round the kernel panels (changelog/reload/settings) with ╭─ corners",
 		},
 		values: {
 			on: "On",
@@ -179,6 +182,7 @@ const COPY = {
 			tokenCounts: "Token 数量",
 			stallDetails: "停顿详情",
 			routerSpec: "Router spec（侦察模式）",
+			chrome: "系统面板圆角",
 			speedEnabled: "实时速度启用",
 			speedGroup: "实时速度",
 			telemetryGroup: "每轮遥测",
@@ -213,6 +217,7 @@ const COPY = {
 			cacheHit: "DeepSeek 缓存命中率（cacheRead ÷ 计费输入）",
 			extensionStatuses: "其他已加载扩展的状态行",
 			routerSpec: "首轮 read+bash 侦察，再全量续跑",
+			chrome: "用 ╭─ 圆角替换内核面板（changelog/reload/设置）的横线",
 		},
 		values: {
 			on: "开启",
@@ -283,6 +288,10 @@ function toggleRouterSpec(config: PiTuiConfig): PiTuiConfig {
 		...config,
 		modules: { ...config.modules, routerSpec: !config.modules.routerSpec },
 	};
+}
+
+function toggleChrome(config: PiTuiConfig): PiTuiConfig {
+	return { ...config, chrome: !config.chrome };
 }
 
 function cycleCursorStyle(config: PiTuiConfig): PiTuiConfig {
@@ -409,6 +418,12 @@ function buildFeaturesItems(
 			label: copy.labels.routerSpec,
 			currentValue: config.modules.routerSpec ? copy.values.on : copy.values.off,
 			description: d.routerSpec,
+		},
+		{
+			id: "chrome",
+			label: copy.labels.chrome,
+			currentValue: config.chrome ? copy.values.on : copy.values.off,
+			description: d.chrome,
 		},
 	];
 }
@@ -680,6 +695,7 @@ function handleSettingChange(
 		if (itemId === "settingsLanguage") return toggleLanguage(config);
 		if (itemId === "wheelScrollLines") return cycleWheelScrollLines(config);
 		if (itemId === "routerSpec") return toggleRouterSpec(config);
+		if (itemId === "chrome") return toggleChrome(config);
 	}
 	if (tab === "icons") {
 		if (itemId === "mode") return cycleIconMode(config);

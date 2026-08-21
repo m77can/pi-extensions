@@ -30,4 +30,5 @@ yarn.lock
 
 # temp
 *.tmp.reasonix/
+.reasonix/
 reasonix.toml

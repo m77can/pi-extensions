@@ -70,6 +70,7 @@ export interface PiTuiConfig {
 	cursorStyle: CursorStyle;
 	fullscreen: FullscreenConfig;
 	icons: { mode: IconMode };
+	chrome: boolean;
 	modules: ModulesConfig;
 	footerSegments: FooterSegments;
 	telemetry: TelemetryConfig;
@@ -82,6 +83,7 @@ export const DEFAULT_CONFIG: PiTuiConfig = {
 	cursorStyle: "block",
 	fullscreen: { wheelScrollLines: DEFAULT_FULLSCREEN_WHEEL_SCROLL_LINES },
 	icons: { mode: "auto" },
+	chrome: true,
 	modules: {
 		header: true,
 		editor: true,

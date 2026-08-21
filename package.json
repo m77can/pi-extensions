@@ -31,7 +31,8 @@
 			"./extensions/pi-footer/index.ts",
 			"./extensions/pi-metrics/index.ts",
 			"./extensions/pi-settings/index.ts",
-			"./extensions/pi-router-spec/index.ts"
+			"./extensions/pi-router-spec/index.ts",
+			"./extensions/pi-chrome/index.ts"
 		],
 		"themes": [
 			"./themes"
