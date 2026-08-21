@@ -28,8 +28,7 @@
 			"./extensions/pi-header/index.ts",
 			"./extensions/pi-editor/index.ts",
 			"./extensions/pi-footer/index.ts",
-			"./extensions/pi-speed/index.ts",
-			"./extensions/pi-telemetry/index.ts",
+			"./extensions/pi-metrics/index.ts",
 			"./extensions/pi-settings/index.ts",
 			"./pi-router-spec/index.ts"
 		]

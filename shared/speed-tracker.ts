@@ -4,7 +4,7 @@
  * Kept dependency-free and framework-free so it stays testable outside pi.
  */
 
-export type CountStrategy = "estimate" | "direct";
+export type CountStrategy = "estimate" | "direct" | "chars";
 
 export interface TokenEvent {
 	time: number;
@@ -40,6 +40,7 @@ function isSuccessfulStop(stopReason: string | undefined): boolean {
 export function estimateTokensFromDelta(text: string, strategy: CountStrategy): number {
 	if (!text) return 0;
 	if (strategy === "direct") return 1;
+	if (strategy === "chars") return Math.max(1, Math.round(text.length / 4));
 	const matches = text.match(/\w+|[^\s\w]/g);
 	return matches ? matches.length : 0;
 }

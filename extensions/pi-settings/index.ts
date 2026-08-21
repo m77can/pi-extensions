@@ -26,7 +26,7 @@ const SPEED_LABEL_PRESETS = ["tok/s", "tokens/s", "tps"] as const;
 const SLIDING_WINDOW_PRESETS = [250, 500, 1000, 2000, 5000] as const;
 const RENDER_INTERVAL_PRESETS = [100, 250, 500, 1000] as const;
 const MAX_DISPLAY_SPEED_PRESETS = [100, 250, 500, 1000, 2000] as const;
-const COUNT_STRATEGY_PRESETS = ["estimate", "direct"] as const;
+const COUNT_STRATEGY_PRESETS = ["estimate", "direct", "chars"] as const;
 
 interface SettingItem {
 	id: string;
@@ -67,6 +67,7 @@ const COPY = {
 			cost: "Cost",
 			extensionStatuses: "Extension status line",
 			speedSegment: "Speed in footer",
+			cacheHit: "Cache hit",
 			speedWorking: "Working indicator",
 			speedLabel: "Speed label",
 			speedSlidingWindow: "Sliding window",
@@ -88,7 +89,7 @@ const COPY = {
 			cursorStyles: { block: "Block", bar: "Bar", underline: "Underline" },
 			icons: { auto: "Auto", nerd: "Nerd", ascii: "ASCII" },
 			ms: (count: number) => `${count}ms`,
-			countStrategies: { estimate: "Estimate", direct: "Direct" },
+			countStrategies: { estimate: "Estimate", direct: "Direct", chars: "Chars÷4" },
 		},
 	},
 	zh: {
@@ -118,6 +119,7 @@ const COPY = {
 			cost: "费用",
 			extensionStatuses: "扩展状态行",
 			speedSegment: "Footer 中的速度",
+			cacheHit: "缓存命中",
 			speedWorking: "工作指示器",
 			speedLabel: "速度标签",
 			speedSlidingWindow: "滑动窗口",
@@ -138,7 +140,7 @@ const COPY = {
 			cursorStyles: { block: "块", bar: "竖线", underline: "下划线" },
 			icons: { auto: "自动", nerd: "Nerd", ascii: "ASCII" },
 			ms: (count: number) => `${count}ms`,
-			countStrategies: { estimate: "估算", direct: "直接" },
+			countStrategies: { estimate: "估算", direct: "直接", chars: "字符÷4" },
 		},
 	},
 } as const;
@@ -373,6 +375,11 @@ function buildSegmentsItems(
 			id: "speed",
 			label: copy.labels.speedSegment,
 			currentValue: flag(segs.speed),
+		},
+		{
+			id: "cacheHit",
+			label: copy.labels.cacheHit,
+			currentValue: flag(segs.cacheHit),
 		},
 		{
 			id: "extensionStatuses",

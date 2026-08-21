@@ -54,9 +54,13 @@ import {
 	subscribeConfig,
 	setRequestFooterRender,
 	requestFooterRender,
-	getSpeedTracker,
+	getSessionMetrics,
 } from "../../shared/pi-tui-store.js";
-import { SpeedTracker } from "../../shared/speed-tracker.js";
+import {
+	cacheHitPercent,
+	sessionTokensPerSecond,
+	formatTokensPerSecond,
+} from "../../shared/metrics.js";
 
 function isTuiContext(ctx: ExtensionContext): boolean {
 	try {
@@ -240,16 +244,22 @@ function renderStatsBlock(
 	return stats.join(` ${theme.fg("dim", "|")} `);
 }
 
-/** Session-average tok/s, right-aligned next to the model/stats block. */
+/** Session-average decode throughput (harness tok/s), right-aligned. */
 function renderSpeedSegment(
 	theme: Theme,
-	tracker: SpeedTracker,
 	glyphs: IconGlyphs,
 	config: PiTuiConfig,
 ): string {
-	const avg = tracker.sessionAvgTokS();
-	const value = avg === null ? "--" : `${avg.toFixed(1)} ${config.speed.label}`;
-	return theme.fg("accent", `${glyphs.speed} avg ${value}`);
+	const tps = sessionTokensPerSecond(getSessionMetrics());
+	const value = tps === null ? "--" : `${formatTokensPerSecond(tps)} ${config.speed.label}`;
+	return theme.fg("accent", `${glyphs.speed} ${value}`);
+}
+
+/** DeepSeek cache-hit share (harness cacheRead / billed input). */
+function renderCacheHitSegment(theme: Theme, glyphs: IconGlyphs): string {
+	const pct = cacheHitPercent(getSessionMetrics());
+	const value = pct === null ? "--" : `${pct}%`;
+	return theme.fg(cacheHitColor(pct ?? 0), `${glyphs.cacheHit} ${value}`);
 }
 
 function renderExtensionStatusLines(
@@ -276,7 +286,6 @@ export function installFooter(
 	ctx: ExtensionContext,
 	getState: () => FooterState,
 	getMeta: () => ModelMeta,
-	tracker: SpeedTracker,
 	scheduleGitRefresh: () => void,
 ): () => void {
 	ctx.ui.setFooter((tui, theme, footerData) => {
@@ -397,8 +406,14 @@ export function installFooter(
 				const statsBlock = renderStatsBlock(theme, totals, glyphs, segments);
 				let rightBlock = statsBlock;
 				if (segments.speed) {
-					const speedSeg = renderSpeedSegment(theme, tracker, glyphs, config);
+					const speedSeg = renderSpeedSegment(theme, glyphs, config);
 					rightBlock = [statsBlock, speedSeg]
+						.filter(Boolean)
+						.join(` ${theme.fg("dim", "|")} `);
+				}
+				if (segments.cacheHit) {
+					const cacheSeg = renderCacheHitSegment(theme, glyphs);
+					rightBlock = [rightBlock, cacheSeg]
 						.filter(Boolean)
 						.join(` ${theme.fg("dim", "|")} `);
 				}
@@ -431,9 +446,8 @@ export function installFooter(
 export default function piFooter(pi: ExtensionAPI): void {
 	const sessionLifecycle = new SessionLifecycle();
 	const state: FooterState = createInitialState();
-	// Shared speed engine from the global store — pi-speed feeds it (data owner);
-	// this module only reads sessionAvgTokS() for the footer segment.
-	const tracker = getSpeedTracker();
+	// Whole-session harness metrics are owned by pi-metrics (feeds the store);
+	// this module only reads sessionTokensPerSecond() + cacheHitPercent().
 
 	let active = false;
 	let lastCtx: ExtensionContext | undefined;
@@ -505,7 +519,6 @@ export default function piFooter(pi: ExtensionAPI): void {
 				ctx,
 				() => state,
 				() => getMeta(ctx),
-				tracker,
 				() => {
 					void scheduleGitRefresh(ctx);
 				},
@@ -540,7 +553,7 @@ export default function piFooter(pi: ExtensionAPI): void {
 		}
 	});
 
-	pi.on("session_shutdown", async (_event, ctx) => {
+	pi.on("session_shutdown", async () => {
 		sessionLifecycle.shutdown();
 		stopWorkingTimer();
 		uninstall();
@@ -554,7 +567,7 @@ export default function piFooter(pi: ExtensionAPI): void {
 		startWorkingTimer();
 	});
 
-	pi.on("agent_end", (_event, ctx) => {
+	pi.on("agent_end", () => {
 		if (!sessionLifecycle.isCurrent()) return;
 		stopWorkingTimer();
 		if (state.workingSince !== undefined) {

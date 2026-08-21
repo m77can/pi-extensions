@@ -13,6 +13,10 @@ import {
 	type PiTuiConfig,
 } from "./config.js";
 import { SpeedTracker } from "./speed-tracker.js";
+import {
+	emptySessionMetrics,
+	type SessionMetrics,
+} from "./metrics.js";
 
 const STORE_KEY = Symbol.for("pi-tui.store");
 
@@ -20,6 +24,8 @@ interface PiTuiStore {
 	config: PiTuiConfig;
 	/** Single shared speed engine. pi-speed feeds it (data owner); pi-footer only reads sessionAvgTokS(). */
 	speedTracker: SpeedTracker;
+	/** Whole-session harness metrics, owned by pi-metrics. */
+	sessionMetrics: SessionMetrics;
 	subscribers: Set<() => void>;
 	requestFooterRender: (() => void) | undefined;
 	editorControls:
@@ -38,10 +44,13 @@ function initStore(): PiTuiStore {
 	if (existing) {
 		// /reload keeps the process alive, so globalThis persists. A store
 		// created by an older version of this file may be missing newer fields
-		// (e.g. `speedTracker`). Backfill them instead of returning a store
-		// that short-circuits `getSpeedTracker()` to undefined.
+		// (e.g. `speedTracker`, `sessionMetrics`). Backfill them instead of
+		// returning a store that short-circuits the getters to undefined.
 		if (!existing.speedTracker) {
 			existing.speedTracker = new SpeedTracker(existing.config.speed);
+		}
+		if (!existing.sessionMetrics) {
+			existing.sessionMetrics = emptySessionMetrics();
 		}
 		if (!existing.subscribers) existing.subscribers = new Set();
 		return existing;
@@ -51,6 +60,7 @@ function initStore(): PiTuiStore {
 	const store: PiTuiStore = {
 		config,
 		speedTracker: new SpeedTracker(config.speed),
+		sessionMetrics: emptySessionMetrics(),
 		subscribers: new Set(),
 		requestFooterRender: undefined,
 		editorControls: undefined,
@@ -65,6 +75,10 @@ export function getConfig(): PiTuiConfig {
 
 export function getSpeedTracker(): SpeedTracker {
 	return initStore().speedTracker;
+}
+
+export function getSessionMetrics(): SessionMetrics {
+	return initStore().sessionMetrics;
 }
 
 export function subscribeConfig(fn: () => void): () => void {

@@ -9,7 +9,7 @@ import type { IconMode } from "./icons.js";
 
 export type SettingsLanguage = "en" | "zh";
 export type CursorStyle = "block" | "bar" | "underline";
-export type CountStrategy = "estimate" | "direct";
+export type CountStrategy = "estimate" | "direct" | "chars";
 
 export type { IconMode } from "./icons.js";
 
@@ -18,8 +18,7 @@ export interface ModulesConfig {
 	header: boolean;
 	editor: boolean;
 	footer: boolean;
-	speed: boolean;
-	telemetry: boolean;
+	metrics: boolean;
 	settings: boolean;
 }
 
@@ -34,8 +33,10 @@ export interface FooterSegments {
 	tokens: boolean;
 	cost: boolean;
 	extensionStatuses: boolean;
-	/** Session-average tok/s shown in the footer. */
+	/** Session-average decode throughput (harness tok/s) shown in the footer. */
 	speed: boolean;
+	/** DeepSeek cache-hit share (harness cacheRead / billed input). */
+	cacheHit: boolean;
 }
 
 export interface TelemetryConfig {
@@ -88,8 +89,7 @@ export const DEFAULT_CONFIG: PiTuiConfig = {
 		header: true,
 		editor: true,
 		footer: true,
-		speed: true,
-		telemetry: true,
+		metrics: true,
 		settings: true,
 	},
 	footerSegments: {
@@ -104,6 +104,7 @@ export const DEFAULT_CONFIG: PiTuiConfig = {
 		cost: true,
 		extensionStatuses: true,
 		speed: true,
+		cacheHit: true,
 	},
 	telemetry: {
 		enabled: true,
@@ -181,7 +182,8 @@ function normalizeConfig(config: PiTuiConfig): PiTuiConfig {
 	);
 	if (
 		config.speed.countStrategy !== "estimate" &&
-		config.speed.countStrategy !== "direct"
+		config.speed.countStrategy !== "direct" &&
+		config.speed.countStrategy !== "chars"
 	) {
 		config.speed.countStrategy = DEFAULT_CONFIG.speed.countStrategy;
 	}
