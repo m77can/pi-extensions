@@ -143,6 +143,14 @@ export default function piMetrics(pi: ExtensionAPI): void {
 		workTimer = undefined;
 	}
 
+	// ---- real-time speed (data owner for the shared SpeedTracker) ----
+	let currentTurn: number | null = null;
+	pi.on("session_start", () => {
+		tracker.resetSession();
+		sessionAcc.reset();
+		currentTurn = null;
+	});
+
 	function renderWorking(ctx: ExtensionContext, speed: number | null) {
 		if (!isTuiContext(ctx)) return;
 		const config = getConfig();
@@ -220,6 +228,7 @@ export default function piMetrics(pi: ExtensionAPI): void {
 		}
 		// Feed the turn metrics (first token + stall detection).
 		turnAcc.onMessageUpdate(event.message, delta);
+		if (currentTurn !== null) sessionAcc.firstToken(currentTurn);
 		renderWorking(ctx, tracker.liveTokS());
 	});
 
@@ -240,12 +249,18 @@ export default function piMetrics(pi: ExtensionAPI): void {
 			foldCalibration(calibration, completed.estimatedTokens, usageOutput);
 		}
 		turnAcc.onMessageEnd(event.message);
+		// Fold provider usage into the session accumulator so the footer's
+		// session cache-hit segment (cacheRead ÷ billed prompt) has data.
+		if (currentTurn !== null) {
+			sessionAcc.messageEnd(currentTurn, event.message.usage ?? null);
+		}
 		stopWorkTimer();
 		renderWorking(ctx, tracker.lastTokS);
 	});
 
 	// ---- per-turn + session metrics timing ----
 	pi.on("turn_start", (event) => {
+		currentTurn = event.turnIndex;
 		turnAcc.startTurn();
 		sessionAcc.stepStart(event.turnIndex);
 	});
