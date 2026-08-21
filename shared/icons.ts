@@ -199,6 +199,7 @@ const RUNTIME_ASCII_SYMBOLS: Record<string, string> = {
 };
 
 export function runtimeSymbol(name: string, mode: IconMode): string {
-	if (resolveIconMode(mode) === "ascii") return RUNTIME_ASCII_SYMBOLS[name] ?? name;
+	if (resolveIconMode(mode) === "ascii")
+		return RUNTIME_ASCII_SYMBOLS[name] ?? name;
 	return RUNTIME_SYMBOLS[name] ?? "";
 }

@@ -101,15 +101,19 @@ export class PiEditor extends CustomEditor {
 		editorTheme: EditorTheme,
 		keybindings: KeybindingsManager,
 		cursorStyle: CursorStyle = "block",
+		paint?: (s: string) => string,
 	) {
 		super(tui, editorTheme, keybindings, { paddingX: 0 });
 		this.cursorStyle = cursorStyle;
 		configureCursor(tui, cursorStyle);
-		// route the frame through this.borderColor so pi can recolor it via
-		// updateEditorBorderColor() — bash mode and thinking-level borders both
-		// flow through this one property.
-		this.getRail = () => this.borderColor("│");
-		this.getBorder = (s: string) => this.borderColor(s);
+		// The rounded frame uses a FIXED injected paint, NOT the mutable
+		// `this.borderColor`. Pi's framework recolors `borderColor` on thinking-
+		// level / bash-mode changes (updateEditorBorderColor), which would leak
+		// the thinking color into the frame. A fixed paint keeps the input frame
+		// identical to the header/footer accent color regardless of that.
+		const frame = paint ?? ((s: string) => editorTheme.borderColor(s));
+		this.getRail = () => frame("│");
+		this.getBorder = frame;
 	}
 
 	override setPaddingX(_padding: number): void {
@@ -198,16 +202,16 @@ export function installEditor(
 		activeTui = tui;
 		applyFullscreenWheelScrollLines(tui, currentWheelScrollLines);
 		previousHardwareCursor = tui.getShowHardwareCursor();
+		// Fixed accent paint: input frame matches header/footer accent and is
+		// immune to the framework's thinking-level border recoloring.
+		const paint = (s: string) => ctx.ui.theme.fg("accent", s);
 		activeEditor = new PiEditor(
 			tui,
 			editorTheme,
 			keybindings,
 			currentCursorStyle,
+			paint,
 		);
-		// Align the input border with the header/footer accent color. Pi's
-		// framework recolors `borderColor` by thinking level; override it once at
-		// construction so the rounded frame stays accent (same as header/footer).
-		activeEditor.borderColor = (s: string) => ctx.ui.theme.fg("accent", s);
 		return activeEditor;
 	});
 	return {
