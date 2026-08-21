@@ -23,16 +23,16 @@ ARG="${1:-}"
 bump_version() {
   local current major minor patch
   current="$(node -p "require('./package.json').version")"
-  IFS='.' read -r major minor patch <<< "$current"
+  IFS='.' read -r major minor patch <<<"$current"
   minor="${minor:-0}"
   patch="${patch:-0}"
 
   local next
   case "$ARG" in
-    major) next="$((major + 1)).0.0" ;;
-    minor) next="${major}.$((minor + 1)).0" ;;
-    patch) next="${major}.${minor}.$((patch + 1))" ;;
-    *) return 0 ;;
+  major) next="$((major + 1)).0.0" ;;
+  minor) next="${major}.$((minor + 1)).0" ;;
+  patch) next="${major}.${minor}.$((patch + 1))" ;;
+  *) return 0 ;;
   esac
 
   npm version "$next" --no-git-tag-version >/dev/null
