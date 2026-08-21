@@ -86,6 +86,12 @@ const QuestionSchema = Type.Object({
 						'Prefix shown before the text the user is typing, phrased in the user\'s language, max ~10 characters. Default: "Type: ".',
 				}),
 			),
+			hint: Type.Optional(
+				Type.String({
+					description:
+						"Bottom help line describing the available keys, phrased in the user's language, max ~50 characters. Write only the action words (e.g. 'move / choose / next / cancel').",
+				}),
+			),
 		}),
 	),
 });
@@ -102,6 +108,7 @@ interface QuestionUi {
 	customRow?: string;
 	submit?: string;
 	inputPrompt?: string;
+	hint?: string;
 }
 
 interface QuestionParams {
@@ -502,9 +509,9 @@ class AskUi {
 			}
 		}
 
-		// Hint（按键提示固定英文，不随对话语言变）
+		// Hint（默认英文；模型可生成对应语言按键提示）
 		lines.push(
-			`${paint("│")}${dim(padRight("↑/↓ move · Enter/Space select · Tab switch · Esc cancel", innerWidth))}${paint("│")}`,
+			`${paint("│")}${dim(padRight(q.ui?.hint ?? "↑/↓ move · Enter/Space select · Tab switch · Esc cancel", innerWidth))}${paint("│")}`,
 		);
 		lines.push(paint(`╰${"─".repeat(Math.max(0, width - 2))}╯`));
 
