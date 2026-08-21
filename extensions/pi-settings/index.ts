@@ -75,7 +75,7 @@ const COPY = {
 			context: "Context bar",
 			tokens: "Tokens",
 			extensionStatuses: "Extension status line",
-			cacheHit: "Cache hit",
+			
 			speedWorking: "Working indicator",
 			speedLabel: "Speed label",
 			speedSlidingWindow: "Sliding window",
@@ -123,7 +123,7 @@ const COPY = {
 			runtime: "Detected language runtime (node/rust/go/...)",
 			context: "Context occupancy bar and percentage",
 			tokens: "Input / output token counts",
-			cacheHit: "DeepSeek cache-hit share (cacheRead ÷ billed input)",
+			
 			extensionStatuses: "Status line from other loaded extensions",
 			routerSpec: "First-round read+bash recon before full continuation",
 			chrome:
@@ -177,7 +177,7 @@ const COPY = {
 			context: "上下文栏",
 			tokens: "Token",
 			extensionStatuses: "扩展状态行",
-			cacheHit: "缓存命中",
+			
 			speedWorking: "工作指示器",
 			speedLabel: "速度标签",
 			speedSlidingWindow: "滑动窗口",
@@ -222,7 +222,7 @@ const COPY = {
 			runtime: "检测到的语言运行时（node/rust/go/...）",
 			context: "上下文占用进度条和百分比",
 			tokens: "输入 / 输出 token 数",
-			cacheHit: "DeepSeek 缓存命中率（cacheRead ÷ 计费输入）",
+			
 			extensionStatuses: "其他已加载扩展的状态行",
 			routerSpec: "首轮 read+bash 侦察，再全量续跑",
 			chrome: "用 ╭─ 圆角替换内核面板（changelog/reload/设置）的横线",
@@ -537,12 +537,6 @@ function buildSegmentsItems(
 			label: copy.labels.tokens,
 			currentValue: flag(segs.tokens),
 			description: d.tokens,
-		},
-		{
-			id: "cacheHit",
-			label: copy.labels.cacheHit,
-			currentValue: flag(segs.cacheHit),
-			description: d.cacheHit,
 		},
 		{
 			id: "extensionStatuses",

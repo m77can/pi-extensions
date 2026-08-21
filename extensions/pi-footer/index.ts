@@ -54,9 +54,7 @@ import {
 	subscribeConfig,
 	setRequestFooterRender,
 	requestFooterRender,
-	getSessionMetrics,
 } from "../../shared/pi-tui-store.js";
-import { cacheHitPercent } from "../../shared/metrics.js";
 
 function isTuiContext(ctx: ExtensionContext): boolean {
 	try {
@@ -237,13 +235,6 @@ function renderStatsBlock(
 	return stats.join(` ${theme.fg("dim", "|")} `);
 }
 
-/** DeepSeek cache-hit share (harness cacheRead / billed input). */
-function renderCacheHitSegment(theme: Theme, glyphs: IconGlyphs): string {
-	const pct = cacheHitPercent(getSessionMetrics());
-	const value = pct === null ? "--" : `${pct}%`;
-	return theme.fg(cacheHitColor(pct ?? 0), `${glyphs.cacheHit} ${value}`);
-}
-
 function renderExtensionStatusLines(
 	theme: Theme,
 	extensionStatuses: ReadonlyMap<string, string>,
@@ -386,15 +377,8 @@ export function installFooter(
 				const modelBlock = modelParts.join(theme.fg("dim", " · "));
 
 				const statsBlock = renderStatsBlock(theme, totals, glyphs, segments);
-				let rightBlock = statsBlock;
-				if (segments.cacheHit) {
-					const cacheSeg = renderCacheHitSegment(theme, glyphs);
-					rightBlock = [rightBlock, cacheSeg]
-						.filter(Boolean)
-						.join(` ${theme.fg("dim", "|")} `);
-				}
 
-				const line2 = alignRight(modelBlock, rightBlock, width, theme);
+				const line2 = alignRight(modelBlock, statsBlock, width, theme);
 
 				const mainLines = [line1, line2].map((line) =>
 					truncateToWidth(line, width, theme.fg("dim", "...")),
@@ -423,8 +407,8 @@ export default function piFooter(pi: ExtensionAPI): void {
 	const sessionLifecycle = new SessionLifecycle();
 	const state: FooterState = createInitialState();
 	// Whole-session harness metrics are owned by pi-metrics (feeds the store);
-	// this module only reads cacheHitPercent(). Live speed lives in the working
-	// indicator (pi-metrics), not the footer.
+	// this footer only renders usage totals from session entries. Live speed
+	// lives in the working indicator (pi-metrics), not the footer.
 
 	let active = false;
 	let lastCtx: ExtensionContext | undefined;

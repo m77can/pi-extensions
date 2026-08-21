@@ -34,8 +34,6 @@ export interface FooterSegments {
 	context: boolean;
 	tokens: boolean;
 	extensionStatuses: boolean;
-	/** DeepSeek cache-hit share (harness cacheRead / billed input). */
-	cacheHit: boolean;
 }
 
 export interface TelemetryConfig {
@@ -104,7 +102,6 @@ export const DEFAULT_CONFIG: PiTuiConfig = {
 		context: true,
 		tokens: true,
 		extensionStatuses: true,
-		cacheHit: true,
 	},
 	telemetry: {
 		enabled: true,
