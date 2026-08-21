@@ -298,7 +298,7 @@ export class PiHeader implements Component {
 			muted(cmd3),
 		];
 
-		let contentLines = [...contentTop, ...contentBottom].map((line) =>
+		const contentLines = [...contentTop, ...contentBottom].map((line) =>
 			truncateToWidth(line, Math.max(1, contentWidth), dim("...")),
 		);
 
@@ -310,10 +310,7 @@ export class PiHeader implements Component {
 			const brandTopPad = Math.floor((rowCount - brandLines.length) / 2);
 			rows = [];
 			for (let row = 0; row < rowCount; row++) {
-				const brand = padRight(
-					brandLines[row - brandTopPad] ?? "",
-					brandWidth,
-				);
+				const brand = padRight(brandLines[row - brandTopPad] ?? "", brandWidth);
 				const content = contentLines[row] ?? "";
 				rows.push(`${brand}${paint("│")} ${content}`.trimEnd());
 			}

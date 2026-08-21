@@ -29,4 +29,4 @@ yarn.lock
 .pi/
 
 # temp
-*.tmp
+*.tmp.reasonix/
