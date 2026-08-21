@@ -18,6 +18,7 @@ pi install git:github.com/m77can/pi-extensions
 | `pi-metrics` | 实时 tok/s（working indicator）+ 每轮 TPS/TTFT/stall 通知 + 累计 metrics | `setWorkingMessage` / `notify` |
 | `pi-settings` | `/pi-tui` 设置面板，统一开关各模块 | 命令 `/pi-tui` |
 | `pi-router-spec` | 首轮 Recon 侦察 → 全量续跑，按模型门控重构 payload | provider payload |
+| `pi-ask` | `ask_user_question` 工具：圆角问卷 UI（同 pi-tui 风格），schema/envelope 对齐 rpiv-ask 契约 | 工具 + `ctx.ui.custom` 浮层 |
 
 ## 目录结构
 
@@ -58,6 +59,7 @@ pi update --extension git:github.com/m77can/pi-extensions
 本项目功能源自以下 MIT 许可的 Pi 社区项目：
 
 - [pi-open-tui](https://github.com/OldSuns/pi-open-tui)
+- [rpiv-ask-user-question](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-ask-user-question)：`pi-ask` 的工具 schema 与 LLM 返回 envelope 契约对齐该项目，渲染层为自研圆角 UI
 - [pi-haiku](https://github.com/nnocte/pi-haiku)
 - [pi-claude-code-tui](https://github.com/Phoobobo/pi-claude-code-tui)
 - [pi-zentui](https://github.com/lmilojevicc/pi-zentui)
