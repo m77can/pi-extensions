@@ -10,7 +10,6 @@ import {
 	formatCwd,
 	formatModelLabel,
 	formatThinkingLabel,
-	headerColumnWidths,
 	padRight,
 	pickSlashCommandTips,
 	truncateToWidth,
@@ -228,16 +227,6 @@ function boxedLine(
 	return `${paint("│")}${padRight(content, width - 2)}${paint("│")}`;
 }
 
-function twoColumn(
-	left: string,
-	right: string,
-	leftWidth: number,
-	rightWidth: number,
-	paint: (text: string) => string,
-): string {
-	return `${padRight(left, leftWidth)} ${paint("│")} ${padRight(right, rightWidth, "…")}`;
-}
-
 export class PiHeader implements Component {
 	private readonly pi: ExtensionAPI;
 	private readonly ctx: ExtensionContext;
@@ -266,47 +255,85 @@ export class PiHeader implements Component {
 		if (width < 24) return [paint(`Pi v${VERSION}`)];
 
 		const innerWidth = width - 2;
-		const { leftWidth, rightWidth, useTips } = headerColumnWidths(innerWidth);
+
+		// --- Column layout (pi-ui inspired) -------------------------------
+		// Brand column = left 1/3 (min 28), content column = the rest.
+		// Below the minimum content width we stack into a single centered column.
+		const BRAND_MIN = 28;
+		const CONTENT_MIN = 24;
+		const brandWidth = Math.max(
+			BRAND_MIN,
+			Math.min(40, Math.floor(innerWidth / 3)),
+		);
+		const wide = innerWidth >= brandWidth + 3 + CONTENT_MIN;
+		const contentWidth = wide ? innerWidth - brandWidth - 3 : innerWidth;
+
+		// --- Brand column (logo + version, vertically centered) -----------
+		const brandLines = [
+			...renderLogo(this.frame, paint).map((line) => center(line, brandWidth)),
+			center(dim(`v${VERSION}`), brandWidth),
+		];
+
+		// --- Content column ------------------------------------------------
 		const model = formatModelLabel(this.ctx.model);
 		const effort = formatThinkingLabel(this.pi.getThinkingLevel());
 		const cwd = formatCwd(this.ctx.cwd);
 
-		const leftLines = [
-			...renderLogo(this.frame, paint).map((line) => center(line, leftWidth)),
-			center(bold("Let's build something great"), leftWidth),
-			center(muted(`${model} · ${effort}`), leftWidth),
-			center(dim(cwd), leftWidth),
-		];
-
-		const tipDivider = paint("─".repeat(Math.max(8, Math.min(rightWidth, 22))));
-		const [cmd0 = "", cmd1 = "", cmd2 = "", cmd3 = ""] = this.tipCommands;
-		const tipLines = [
-			"",
+		const contentTop: string[] = [
 			paint(bold("Welcome")),
 			muted("Ask Pi anything"),
+			"",
+			muted(`${model} · ${effort}`),
+			dim(cwd),
+		];
+
+		const tipDivider = paint("─".repeat(Math.min(contentWidth, 22)));
+		const [cmd0 = "", cmd1 = "", cmd2 = "", cmd3 = ""] = this.tipCommands;
+		const contentBottom: string[] = [
 			tipDivider,
 			paint(bold("Commands")),
 			muted(cmd0),
 			muted(cmd1),
 			muted(cmd2),
 			muted(cmd3),
-			"",
 		];
+
+		let contentLines = [...contentTop, ...contentBottom].map((line) =>
+			truncateToWidth(line, Math.max(1, contentWidth), dim("...")),
+		);
+
+		// --- Assemble rows ---------------------------------------------------
+		let rows: string[];
+		if (wide) {
+			const rowCount = Math.max(brandLines.length, contentLines.length);
+			// Brand column vertical centering (pi-ui renderWideWelcome).
+			const brandTopPad = Math.floor((rowCount - brandLines.length) / 2);
+			rows = [];
+			for (let row = 0; row < rowCount; row++) {
+				const brand = padRight(
+					brandLines[row - brandTopPad] ?? "",
+					brandWidth,
+				);
+				const content = contentLines[row] ?? "";
+				rows.push(`${brand}${paint("│")} ${content}`.trimEnd());
+			}
+		} else {
+			// Stacked: brand centered on top, then content.
+			rows = [
+				"",
+				...brandLines.map((line) => center(line, innerWidth)),
+				center(dim(`v${VERSION}`), innerWidth),
+				"",
+				...contentLines.map((line) => center(line, innerWidth)),
+				"",
+			];
+		}
 
 		const lines = [
 			borderLine("╭", `${paint("Pi")} v${VERSION}`, "╮", width, paint),
 		];
-		for (let i = 0; i < leftLines.length; i++) {
-			const content = useTips
-				? twoColumn(
-						leftLines[i] ?? "",
-						tipLines[i] ?? "",
-						leftWidth,
-						rightWidth,
-						paint,
-					)
-				: padRight(leftLines[i] ?? "", leftWidth);
-			lines.push(boxedLine(content, width, paint));
+		for (const row of rows) {
+			lines.push(boxedLine(row, width, paint));
 		}
 		lines.push(borderLine("╰", "", "╯", width, paint));
 		return lines.map((line) => truncateToWidth(line, width, ""));
