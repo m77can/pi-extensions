@@ -251,7 +251,8 @@ function renderSpeedSegment(
 	config: PiTuiConfig,
 ): string {
 	const tps = sessionTokensPerSecond(getSessionMetrics());
-	const value = tps === null ? "--" : `${formatTokensPerSecond(tps)} ${config.speed.label}`;
+	const value =
+		tps === null ? "--" : `${formatTokensPerSecond(tps)} ${config.speed.label}`;
 	return theme.fg("accent", `${glyphs.speed} ${value}`);
 }
 

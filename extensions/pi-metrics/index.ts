@@ -62,31 +62,73 @@ function formatTurnDuration(ms: number): string {
 export function formatTurnTelemetry(
 	telemetry: TurnTelemetry,
 	theme: Theme,
-	config: { telemetry: { enabled: boolean; tps: boolean; ttft: boolean; duration: boolean; tokens: boolean; stalls: boolean; cost: boolean } },
+	config: {
+		telemetry: {
+			enabled: boolean;
+			tps: boolean;
+			ttft: boolean;
+			duration: boolean;
+			tokens: boolean;
+			stalls: boolean;
+			cost: boolean;
+		};
+	},
 	iconMode: IconMode,
 ): string {
 	const glyphs = resolveGlyphs(iconMode);
 	const t = config.telemetry;
 	const parts: string[] = [];
 	if (t.tps) {
-		const value = telemetry.tps === null ? "—" : `${formatTokensPerSecond(telemetry.tps)} tok/s`;
-		parts.push(theme.fg(telemetry.tps === null ? "muted" : "accent", `${glyphs.speed} TPS ${value}`));
+		const value =
+			telemetry.tps === null
+				? "—"
+				: `${formatTokensPerSecond(telemetry.tps)} tok/s`;
+		parts.push(
+			theme.fg(
+				telemetry.tps === null ? "muted" : "accent",
+				`${glyphs.speed} TPS ${value}`,
+			),
+		);
 	}
 	if (t.ttft && telemetry.ttftMs !== null) {
-		parts.push(theme.fg("text", `${glyphs.latency} TTFT ${formatTurnDuration(telemetry.ttftMs)}`));
+		parts.push(
+			theme.fg(
+				"text",
+				`${glyphs.latency} TTFT ${formatTurnDuration(telemetry.ttftMs)}`,
+			),
+		);
 	}
 	if (t.duration) {
-		parts.push(theme.fg("success", `${glyphs.done} ${formatTurnDuration(telemetry.totalMs)}`));
+		parts.push(
+			theme.fg(
+				"success",
+				`${glyphs.done} ${formatTurnDuration(telemetry.totalMs)}`,
+			),
+		);
 	}
 	if (t.tokens) {
-		parts.push(theme.fg("accent", `${glyphs.input} ${fmtTokens(telemetry.inputTokens)}`));
-		parts.push(theme.fg("success", `${glyphs.output} ${fmtTokens(telemetry.outputTokens)}`));
+		parts.push(
+			theme.fg("accent", `${glyphs.input} ${fmtTokens(telemetry.inputTokens)}`),
+		);
+		parts.push(
+			theme.fg("success", `${glyphs.output} ${fmtTokens(telemetry.outputTokens)}`),
+		);
 	}
 	if (t.stalls && telemetry.stallMs > 0) {
-		parts.push(theme.fg("warning", `${glyphs.stall} stall ${telemetry.stallCount}x / ${formatTurnDuration(telemetry.stallMs)}`));
+		parts.push(
+			theme.fg(
+				"warning",
+				`${glyphs.stall} stall ${telemetry.stallCount}x / ${formatTurnDuration(telemetry.stallMs)}`,
+			),
+		);
 	}
 	if (t.cost && telemetry.rateUsdPerMTokens !== null) {
-		parts.push(theme.fg("warning", `${glyphs.cost} $${telemetry.rateUsdPerMTokens.toFixed(2)}/M`));
+		parts.push(
+			theme.fg(
+				"warning",
+				`${glyphs.cost} $${telemetry.rateUsdPerMTokens.toFixed(2)}/M`,
+			),
+		);
 	}
 	return parts.join(` ${theme.fg("dim", "|")} `);
 }
@@ -106,11 +148,7 @@ export default function piMetrics(pi: ExtensionAPI): void {
 	function renderWorking(ctx: ExtensionContext, speed: number | null) {
 		if (!isTuiContext(ctx)) return;
 		const config = getConfig();
-		if (
-			!config.enabled ||
-			!config.speed.enabled ||
-			!config.speed.working
-		) {
+		if (!config.enabled || !config.speed.enabled || !config.speed.working) {
 			ctx.ui.setWorkingMessage();
 			return;
 		}
@@ -165,7 +203,11 @@ export default function piMetrics(pi: ExtensionAPI): void {
 		if (event.message?.role !== "assistant") return;
 
 		const ev = event.assistantMessageEvent as
-			| { type?: string; delta?: string; partial?: { usage?: { output?: number } } }
+			| {
+					type?: string;
+					delta?: string;
+					partial?: { usage?: { output?: number } };
+			  }
 			| undefined;
 		if (!ev) return;
 		const isContentDelta =

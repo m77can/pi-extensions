@@ -37,7 +37,10 @@ function isSuccessfulStop(stopReason: string | undefined): boolean {
 }
 
 /** Rough token estimate from a stream delta: word-ish runs and single non-space/symbol chars. */
-export function estimateTokensFromDelta(text: string, strategy: CountStrategy): number {
+export function estimateTokensFromDelta(
+	text: string,
+	strategy: CountStrategy,
+): number {
 	if (!text) return 0;
 	if (strategy === "direct") return 1;
 	if (strategy === "chars") return Math.max(1, Math.round(text.length / 4));
@@ -85,7 +88,10 @@ export class TokenSpeedEngine {
 		return this.options.now ? this.options.now() : Date.now();
 	}
 
-	sanitizeTokS(value: number | null, durationMs = this.elapsedMs): number | null {
+	sanitizeTokS(
+		value: number | null,
+		durationMs = this.elapsedMs,
+	): number | null {
 		if (value === null || !Number.isFinite(value) || value <= 0) return null;
 		if (durationMs < this.options.minReliableDurationMs) return null;
 		if (value > this.options.maxDisplayTokS) return null;
@@ -120,7 +126,8 @@ export class TokenSpeedEngine {
 		}
 		if (windowTokenCount === 0) return this.avgTokS;
 
-		const windowDuration = (now - this._events[this._windowStartIndex].time) / 1000;
+		const windowDuration =
+			(now - this._events[this._windowStartIndex].time) / 1000;
 		return windowDuration > 0 ? windowTokenCount / windowDuration : 0;
 	}
 
@@ -220,7 +227,10 @@ export class SpeedTracker {
 			: null;
 	}
 
-	finishMessage(outputTokens: number, stopReason: string | undefined): CompletedMessageSpeed | null {
+	finishMessage(
+		outputTokens: number,
+		stopReason: string | undefined,
+	): CompletedMessageSpeed | null {
 		if (!this.engine.isStreaming) return null;
 		this.engine.reconcileTotal(outputTokens);
 		const durationMs = this.engine.elapsedMs;

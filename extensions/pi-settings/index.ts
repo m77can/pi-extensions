@@ -89,7 +89,11 @@ const COPY = {
 			cursorStyles: { block: "Block", bar: "Bar", underline: "Underline" },
 			icons: { auto: "Auto", nerd: "Nerd", ascii: "ASCII" },
 			ms: (count: number) => `${count}ms`,
-			countStrategies: { estimate: "Estimate", direct: "Direct", chars: "Chars÷4" },
+			countStrategies: {
+				estimate: "Estimate",
+				direct: "Direct",
+				chars: "Chars÷4",
+			},
 		},
 	},
 	zh: {

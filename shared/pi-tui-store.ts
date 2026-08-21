@@ -13,10 +13,7 @@ import {
 	type PiTuiConfig,
 } from "./config.js";
 import { SpeedTracker } from "./speed-tracker.js";
-import {
-	emptySessionMetrics,
-	type SessionMetrics,
-} from "./metrics.js";
+import { emptySessionMetrics, type SessionMetrics } from "./metrics.js";
 
 const STORE_KEY = Symbol.for("pi-tui.store");
 

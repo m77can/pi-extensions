@@ -124,7 +124,9 @@ export function foldMessageUsage(messages: AssistantMessage[]): {
 function isAssistantMessage(message: unknown): message is AssistantMessage {
 	if (!message || typeof message !== "object") return false;
 	const m = message as Record<string, unknown>;
-	return m.role === "assistant" && typeof m.usage === "object" && m.usage !== null;
+	return (
+		m.role === "assistant" && typeof m.usage === "object" && m.usage !== null
+	);
 }
 
 /**
@@ -399,7 +401,10 @@ export class SessionMetricsAccumulator {
 			this.state.cacheRead += usage.cacheRead ?? 0;
 			this.state.cacheWrite += usage.cacheWrite ?? 0;
 			const input = usage.input ?? 0;
-			const uncached = Math.max(0, input - (usage.cacheRead ?? 0) - (usage.cacheWrite ?? 0));
+			const uncached = Math.max(
+				0,
+				input - (usage.cacheRead ?? 0) - (usage.cacheWrite ?? 0),
+			);
 			this.state.uncachedInput += uncached;
 		}
 	}

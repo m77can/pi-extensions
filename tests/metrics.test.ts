@@ -63,7 +63,17 @@ function makeTurn(count = 5): TurnMetricsAccumulator {
 	return acc;
 }
 
-const assistantLike = { role: "assistant", usage: { input: 0, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+const assistantLike = {
+	role: "assistant",
+	usage: {
+		input: 0,
+		output: 10,
+		cacheRead: 0,
+		cacheWrite: 0,
+		totalTokens: 10,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+	},
+};
 const assistantLikeWithUsage = assistantLike;
 
 test("TurnMetricsAccumulator: ttft + decode derive (now injected)", () => {
@@ -95,7 +105,14 @@ test("SessionMetricsAccumulator: steps/turns/llmMs/decode/cache fold", () => {
 	acc.stepStart(0);
 	acc.firstToken(0);
 	// decode: messageEnd uses real performance.now(); just assert increments are sane
-	acc.messageEnd(0, { input: 1000, output: 200, cacheRead: 800, cacheWrite: 50, totalTokens: 1200, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } });
+	acc.messageEnd(0, {
+		input: 1000,
+		output: 200,
+		cacheRead: 800,
+		cacheWrite: 50,
+		totalTokens: 1200,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+	});
 	acc.stepEnd(0);
 
 	const m = acc.metrics;
@@ -121,13 +138,37 @@ test("SessionMetricsAccumulator: tool wall time pairs call/result", () => {
 // ── cacheHitPercent / sessionTokensPerSecond / formatTokensPerSecond ────────
 
 test("cacheHitPercent: harness formula", () => {
-	const m = { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 0, decodeTokens: 0, cacheRead: 800, cacheWrite: 50, uncachedInput: 150 };
+	const m = {
+		turns: 0,
+		steps: 0,
+		llmMs: 0,
+		toolMs: 0,
+		ttftMs: 0,
+		ttftSteps: 0,
+		decodeMs: 0,
+		decodeTokens: 0,
+		cacheRead: 800,
+		cacheWrite: 50,
+		uncachedInput: 150,
+	};
 	// 800 / (150+800+50) = 800/1000 = 80%
 	assert.equal(cacheHitPercent(m), 80);
 });
 
 test("sessionTokensPerSecond: harness cumulative decode throughput", () => {
-	const m = { turns: 0, steps: 0, llmMs: 0, toolMs: 0, ttftMs: 0, ttftSteps: 0, decodeMs: 2000, decodeTokens: 120, cacheRead: 0, cacheWrite: 0, uncachedInput: 0 };
+	const m = {
+		turns: 0,
+		steps: 0,
+		llmMs: 0,
+		toolMs: 0,
+		ttftMs: 0,
+		ttftSteps: 0,
+		decodeMs: 2000,
+		decodeTokens: 120,
+		cacheRead: 0,
+		cacheWrite: 0,
+		uncachedInput: 0,
+	};
 	// 120 / 2s = 60 tok/s
 	assert.equal(sessionTokensPerSecond(m), 60);
 });
