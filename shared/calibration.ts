@@ -36,7 +36,9 @@ const FILE = join(
 
 export function loadCalibration(): CalibrationState {
 	try {
-		const raw = JSON.parse(readFileSync(FILE, "utf8")) as Partial<CalibrationState>;
+		const raw = JSON.parse(
+			readFileSync(FILE, "utf8"),
+		) as Partial<CalibrationState>;
 		return {
 			scale: typeof raw.scale === "number" && raw.scale > 0 ? raw.scale : 1,
 			samples: typeof raw.samples === "number" ? raw.samples : 0,
@@ -84,7 +86,10 @@ export function foldCalibration(
 }
 
 /** Rescale an estimated tok/s toward the authoritative tokenizer count. */
-export function calibrateTokS(estimated: number | null, state: CalibrationState): number | null {
+export function calibrateTokS(
+	estimated: number | null,
+	state: CalibrationState,
+): number | null {
 	if (estimated === null || !Number.isFinite(estimated)) return null;
 	if (!Number.isFinite(state.scale) || state.scale <= 0) return estimated;
 	return estimated * state.scale;
