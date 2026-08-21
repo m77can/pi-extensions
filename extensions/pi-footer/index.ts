@@ -426,7 +426,8 @@ export default function piFooter(pi: ExtensionAPI): void {
 	const sessionLifecycle = new SessionLifecycle();
 	const state: FooterState = createInitialState();
 	// Whole-session harness metrics are owned by pi-metrics (feeds the store);
-	// this module only reads sessionTokensPerSecond() + cacheHitPercent().
+	// this module only reads cacheHitPercent(). Live speed lives in the working
+	// indicator (pi-metrics), not the footer.
 
 	let active = false;
 	let lastCtx: ExtensionContext | undefined;
