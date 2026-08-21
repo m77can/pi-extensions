@@ -446,12 +446,6 @@ function buildFeaturesItems(
 			currentValue: config.modules.ask ? copy.values.on : copy.values.off,
 			description: d.ask,
 		},
-		{
-			id: "chrome",
-			label: copy.labels.chrome,
-			currentValue: config.chrome ? copy.values.on : copy.values.off,
-			description: d.chrome,
-		},
 	];
 }
 
@@ -478,6 +472,12 @@ function buildIconsItems(
 			label: copy.labels.theme,
 			currentValue: "", // filled in SettingsUi from the active theme name
 			description: d.theme,
+		},
+		{
+			id: "chrome",
+			label: copy.labels.chrome,
+			currentValue: config.chrome ? copy.values.on : copy.values.off,
+			description: d.chrome,
 		},
 	];
 }
@@ -717,11 +717,11 @@ function handleSettingChange(
 		if (itemId === "wheelScrollLines") return cycleWheelScrollLines(config);
 		if (itemId === "routerSpec") return toggleRouterSpec(config);
 		if (itemId === "ask") return toggleAsk(config);
-		if (itemId === "chrome") return toggleChrome(config);
 	}
 	if (tab === "icons") {
 		if (itemId === "mode") return cycleIconMode(config);
 		if (itemId === "cursorStyle") return cycleCursorStyle(config);
+		if (itemId === "chrome") return toggleChrome(config);
 		if (itemId === "theme") {
 			// Theme switching persists in pi's settings.json (ctx.ui.setTheme),
 			// not in pi-tui config; keep config unchanged here.
