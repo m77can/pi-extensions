@@ -5,35 +5,24 @@ import {
 import { createRequire } from "node:module";
 import { getConfig } from "../../shared/pi-tui-store.js";
 
-interface DynamicBorderClass {
-	prototype: {
-		color: (text: string) => string;
-		invalidate: () => void;
-		render: (width: number) => string[];
-	};
-}
-
-interface ContainerClass {
-	prototype: {
-		addChild: (component: unknown) => void;
-	};
-}
-
-const MARK = "__piChromeBorderKind";
-
 /**
- * pi-chrome — round the "two horizontal line" system panels (changelog,
- * update notice, /reload box, hotkeys, /settings) into `╭─` / `╰─` corners.
+ * pi-chrome — round the "two horizontal line" system panels (update notice,
+ * changelog, /reload box, hotkeys, /settings, selectors) into complete
+ * `╭──╮ │ │ ╰──╯` frames, matching the pi-editor input.
  *
- * The kernel's DynamicBorder just draws `────`. Every framed panel adds a run
- * of two of them to the same Container. We patch `Container.prototype.addChild`
- * to number them per-container (first = top, second = bottom, repeat) and
- * patch `DynamicBorder.prototype.render` to use the rounded corners.
+ * One patch point: `Container.prototype.render`. For each container we:
+ *   1. pre-scan direct children that are DynamicBorders;
+ *   2. pair them top/bottom in addChild order — an odd middle border (tree
+ *      selector uses three) stays a straight line; a lone border also stays
+ *      straight;
+ *   3. inside a frame: render content children at width-2 and wrap every line
+ *      with │ … │, padded to full width (ANSI-aware);
+ *   4. top/bottom draw ╭ ── ╮ / ╰ ── ╯, all colored through the border's own
+ *      `color` fn so themes (border/warning/accent) keep working.
  *
- * `ctx.ui.custom()` is the official extension UI surface and `CustomEditor`
- * the editor surface; there is no vendor hook for the kernel panels, so this
- * patches the component prototypes instead. The ordinal comes from the actual
- * addChild sequence, so a re-render never flips it (unlike a global counter).
+ * `createRequire` resolves the exact dist file the kernel evaluates through
+ * Node's native require cache — the class/registry we patch is the one pi
+ * itself uses. (A jiti alias import would surface a separate cached copy.)
  */
 export default function piChrome(_pi: ExtensionAPI): void {
 	const config = getConfig();
@@ -42,77 +31,144 @@ export default function piChrome(_pi: ExtensionAPI): void {
 	const agentPackage = getPackageDir();
 	const kernelBorderPath = `${agentPackage}/dist/modes/interactive/components/dynamic-border.js`;
 	const tuiPath = `${agentPackage}/node_modules/@earendil-works/pi-tui/dist/tui.js`;
+	const utilsPath = `${agentPackage}/node_modules/@earendil-works/pi-tui/dist/utils.js`;
 
-	// SAFETY — createRequire resolves the exact same dist file the kernel
-	// eval'd through Node's native require cache, so the class we patch is the
-	// one interactive-mode constructs. A jiti alias import would give a copy
-	// under jiti's separate module cache, which would NOT affect the kernel.
 	const req = createRequire(import.meta.url);
 
-	let borderModule: { DynamicBorder: DynamicBorderClass } | undefined;
-	let tuiModule: { Container: ContainerClass } | undefined;
+	let borderModule: { DynamicBorder: unknown };
+	let tuiModule: { Container: unknown };
+	let utilsModule: {
+		visibleWidth: (s: string) => number;
+		truncateToWidth: (s: string, w: number, ellipsis?: string) => string;
+	};
 	try {
-		borderModule = req(kernelBorderPath) as { DynamicBorder: DynamicBorderClass };
+		borderModule = req(kernelBorderPath) as { DynamicBorder: unknown };
+		tuiModule = req(tuiPath) as { Container: unknown };
+		utilsModule = req(utilsPath) as typeof utilsModule;
 	} catch {
 		// best-effort: kernel layout moved across pi versions
 		return;
 	}
-	try {
-		tuiModule = req(tuiPath) as { Container: ContainerClass };
-	} catch {
-		// best-effort
+
+	// SAFETY: dynamic require of kernel internals — shapes verified at runtime.
+	const borderClass = borderModule.DynamicBorder as { prototype: object };
+	const ContainerCtor = tuiModule.Container as {
+		prototype: { render: (width: number) => string[] };
+	};
+
+	const ContainerProto = ContainerCtor.prototype;
+	const originalRender = ContainerProto.render;
+
+	if (typeof originalRender !== "function") return;
+
+	const isBorder = (child: unknown): boolean => {
+		if (typeof child !== "object" || child === null) return false;
+		// SAFETY: constructor identity via the same prototype duck-check pi
+		// itself relies on across its module boundaries.
+		const ctor = (child as { constructor?: { prototype?: unknown } })
+			.constructor;
+		return ctor?.prototype === borderClass.prototype;
+	};
+
+	function cornerLine(width: number, kind: "top" | "bottom"): string {
+		if (width <= 0) return "";
+		if (width === 1) return kind === "top" ? "╭" : "╰";
+		const body = "─".repeat(Math.max(0, width - 2));
+		return kind === "top" ? `╭${body}╮` : `╰${body}╯`;
 	}
 
-	const borderClass = borderModule?.DynamicBorder;
-
-	if (borderClass) {
-		borderClass.prototype.render = function roundedRender(width: number) {
-			// SAFETY: MARK is written above in addChild before render; the default
-			// 1 covers any single-line usage. Rendering only reads, never mutates.
-			const kind = (this as unknown as { [MARK]?: 1 | 2 })[MARK] ?? 1;
-			if (kind === 1) return [roundTop(width)];
-			return [roundBottom(width)];
-		};
+	function frameLine(content: string, innerWidth: number): string | null {
+		if (innerWidth < 0) return null;
+		const vis = utilsModule.visibleWidth(content);
+		const clipped =
+			vis > innerWidth
+				? utilsModule.truncateToWidth(content, innerWidth, "")
+				: content + " ".repeat(innerWidth - vis);
+		return innerWidth >= 0 ? `│${clipped}│` : clipped;
 	}
 
-	if (tuiModule && borderClass) {
-		const { Container } = tuiModule;
-		const originalAddChild = Container.prototype.addChild;
-		Container.prototype.addChild = function chromeAddChild(
-			component: unknown,
-		): void {
-			// SAFETY — `component` is the kernel's own DynamicBorder instance at
-			// the time addChild is called; matching by constructor prototype is
-			// the same duck-typing pi itself uses across module boundaries.
-			const anyComponent = component as {
-				constructor?: { prototype?: unknown };
-			};
-			if (anyComponent?.constructor?.prototype === borderClass.prototype) {
-				// SAFETY: `component` is the kernel's own DynamicBorder instance
-				// right now; it carries an unchecked runtime shape in typings only.
-				const marked = component as unknown as { [MARK]?: 1 | 2 };
-				// SAFETY: `this` is the kernel Container instance during addChild;
-				// its children are the kernel's own list of components.
-				const container = this as unknown as { children: unknown[] };
-				const count = container.children.filter((child) => {
-					const c = child as { constructor?: { prototype?: unknown } };
-					return c?.constructor?.prototype === borderClass.prototype;
-				}).length;
-				marked[MARK] = ((count % 2) + 1) as 1 | 2;
+	// SAFETY: the patched function below mirrors the original Container.render
+	// (children → lines) and delegates unchanged when no border frames exist.
+	ContainerProto.render = function chromeRender(
+		this: { children: unknown[] },
+		width: number,
+	): string[] {
+		const children: unknown[] = this.children ?? [];
+
+		const borderIndices: number[] = [];
+		for (let i = 0; i < children.length; i++) {
+			if (isBorder(children[i])) borderIndices.push(i);
+		}
+
+		// No frames: delegate exactly to the original render.
+		if (borderIndices.length < 2) {
+			return originalRender.call(this, width);
+		}
+
+		// Odd middle border (tree selector) stays straight.
+		const oddMiddle =
+			borderIndices.length % 2 === 1
+				? borderIndices[Math.floor(borderIndices.length / 2)] ?? -1
+				: -1;
+		const firstBorder = borderIndices[0] ?? -1;
+		const lastBorder = borderIndices[borderIndices.length - 1] ?? -1;
+
+		const innerWidth = Math.max(1, width - 2);
+		const lines: string[] = [];
+		let ordinal = 0;
+
+		for (let i = 0; i < children.length; i++) {
+			const child = children[i];
+			if (isBorder(child)) {
+				ordinal++;
+				const paint = (child as { color: (t: string) => string }).color;
+				if (i === oddMiddle) {
+					lines.push(paint("─".repeat(Math.max(1, width))));
+				} else {
+					const isTop =
+						ordinal % 2 === 1 && i !== lastBorder && !oddMiddleIsBottom(
+							ordinal,
+							borderIndices.length,
+							oddMiddle,
+						);
+					lines.push(
+						paint(
+							isTop ? cornerLine(width, "top") : cornerLine(width, "bottom"),
+						),
+					);
+				}
+				continue;
 			}
-			return originalAddChild.call(this, component);
-		};
-	}
+
+			const inFrame = i >= firstBorder && i <= lastBorder;
+			if (!inFrame) {
+				for (const line of (
+					child as { render: (w: number) => string[] }
+				).render(width)) {
+					lines.push(line);
+				}
+				continue;
+			}
+
+			// In-frame content: render narrower, then pad + rails.
+			const childLines = (
+				child as { render: (w: number) => string[] }
+			).render(innerWidth);
+			for (const line of childLines) {
+				const railed = frameLine(line, innerWidth);
+				if (railed !== null) lines.push(railed);
+			}
+		}
+		return lines;
+	};
 }
 
-function roundTop(width: number): string {
-	if (width <= 0) return "";
-	if (width === 1) return "╭";
-	return `╭${"─".repeat(Math.max(0, width - 2))}╮`;
-}
-
-function roundBottom(width: number): string {
-	if (width <= 0) return "";
-	if (width === 1) return "╰";
-	return `╰${"─".repeat(Math.max(0, width - 2))}╯`;
+/** When 3 borders, ordinal 2 is the straight middle → ordinal 3 is bottom. */
+function oddMiddleIsBottom(
+	ordinal: number,
+	total: number,
+	oddMiddle: number,
+): boolean {
+	if (oddMiddle < 0) return false;
+	return total % 2 === 1 && ordinal === total;
 }
