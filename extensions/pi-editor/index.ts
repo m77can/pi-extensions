@@ -10,7 +10,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
-import type { CursorStyle, PiTuiConfig } from "../../shared/config.js";
+import type { CursorStyle } from "../../shared/config.js";
 import {
 	applyFullscreenWheelScrollLines,
 	DEFAULT_FULLSCREEN_WHEEL_SCROLL_LINES,
@@ -24,8 +24,8 @@ import {
 	getConfig,
 	setEditorControls,
 	subscribeConfig,
+	getSettingsPanelOpener,
 } from "../../shared/pi-tui-store.js";
-import { resolveBorderPaint } from "../../shared/border-paint.js";
 
 function isTuiContext(ctx: ExtensionContext): boolean {
 	try {
@@ -96,6 +96,8 @@ export class PiEditor extends CustomEditor {
 	private readonly getBorder: (s: string) => string;
 	private cursorStyle: CursorStyle;
 	private previewHardwareCursor = false;
+	private wrappedSubmit: ((text: string) => Promise<void>) | undefined;
+	private readonly piSubmit: ((text: string) => Promise<void>) | undefined;
 
 	constructor(
 		tui: TUI,
@@ -115,6 +117,40 @@ export class PiEditor extends CustomEditor {
 		const frame = paint ?? ((s: string) => editorTheme.borderColor(s));
 		this.getRail = () => frame("│");
 		this.getBorder = frame;
+
+		// Hijack /settings (and /changelog) before pi's hard-coded defaultEditor
+		// onSubmit intercepts them. The framework assigns `defaultEditor.onSubmit`
+		// to us AFTER construction, so we wrap the assignment via a setter.
+		const self = this;
+		const desc = Object.getOwnPropertyDescriptor(
+			CustomEditor.prototype,
+			"onSubmit",
+		);
+		const setter = desc?.set;
+		Object.defineProperty(this, "onSubmit", {
+			configurable: true,
+			get() {
+				return self.wrappedSubmit ?? self.piSubmit;
+			},
+			set(fn: ((text: string) => Promise<void>) | undefined) {
+				(self as unknown as { piSubmit?: (text: string) => Promise<void> }).piSubmit = fn;
+				if (setter) {
+					setter.call(self, fn);
+				}
+				self.wrappedSubmit = fn
+					? async (text: string) => {
+							const trimmed = text.trim();
+							if (trimmed === "/settings") {
+								const opener = getSettingsPanelOpener();
+								if (opener && (await opener())) {
+									return;
+								}
+							}
+							await fn(text);
+						}
+					: undefined;
+			},
+		});
 	}
 
 	override setPaddingX(_padding: number): void {
@@ -203,17 +239,16 @@ export function installEditor(
 		activeTui = tui;
 		applyFullscreenWheelScrollLines(tui, currentWheelScrollLines);
 		previousHardwareCursor = tui.getShowHardwareCursor();
-		const resolved = resolveBorderPaint(
-			getConfig(),
-			ctx.ui.theme,
-			_pi.getThinkingLevel(),
-		);
+		// Dynamic theme paint: pi's theme export is a Proxy, so this reads the
+		// CURRENT theme on every render — switching themes recolors the rounded
+		// frame live with no editor rebuild.
+		const paint = (s: string) => ctx.ui.theme.fg("accent", s);
 		activeEditor = new PiEditor(
 			tui,
 			editorTheme,
 			keybindings,
 			currentCursorStyle,
-			resolved ?? undefined,
+			paint,
 		);
 		return activeEditor;
 	});
@@ -241,8 +276,6 @@ export function installEditor(
 
 export default function (pi: ExtensionAPI): void {
 	let controls: ReturnType<typeof installEditor> | undefined;
-	let lastCtx: ExtensionContext | undefined;
-	let lastBorderStyle: PiTuiConfig["borderStyle"] | undefined;
 
 	const teardown = (): void => {
 		try {
@@ -270,7 +303,6 @@ export default function (pi: ExtensionAPI): void {
 			);
 			setEditorControls(controls);
 		}
-		lastBorderStyle = c.borderStyle;
 	};
 
 	pi.on("session_start", (_event, ctx) => {
@@ -281,16 +313,9 @@ export default function (pi: ExtensionAPI): void {
 		const c = getConfig();
 		controls?.setCursorStyle(c.cursorStyle);
 		controls?.setWheelScrollLines(c.fullscreen.wheelScrollLines);
-		// The frame paint is captured at construction; recreate the editor when
-		// the border style changes so the new color applies immediately.
-		if (c.borderStyle !== lastBorderStyle) {
-			teardown();
-			if (lastCtx) apply(lastCtx);
-		}
 	});
 
 	pi.on("session_shutdown", () => {
 		teardown();
-		lastCtx = undefined;
 	});
 }

@@ -16,6 +16,7 @@ import {
 	subscribeConfig,
 	requestFooterRender,
 	getEditorControls,
+	setSettingsPanelOpener,
 } from "../../shared/pi-tui-store.js";
 import {
 	alignRight,
@@ -23,7 +24,6 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "../../shared/utils.js";
-import { resolveBorderPaint } from "../../shared/border-paint.js";
 
 const WHEEL_SCROLL_PRESETS = [1, 4, 7, 10] as const;
 const SPEED_LABEL_PRESETS = ["tok/s", "tokens/s", "tps"] as const;
@@ -66,7 +66,7 @@ const COPY = {
 			wheelScrollLines: "Mouse wheel speed",
 			cursorStyle: "Cursor style",
 			iconMode: "Icon mode",
-			borderStyle: "Border style",
+			theme: "Theme",
 			cwd: "CWD",
 			sessionName: "Session name",
 			gitBranch: "Git branch",
@@ -113,7 +113,7 @@ const COPY = {
 			wheelScrollLines: "Lines scrolled per mouse-wheel notch in fullscreen",
 			iconMode: "Nerd Font icons vs ASCII glyphs (auto-detects terminal)",
 			cursorStyle: "Shape of the text cursor in the editor",
-			borderStyle: "Color of header/editor/settings frames (all UI chrome)",
+			theme: "Ui theme: pi-accent / pi-purple / pi-default",
 			cwd: "Working directory shown on the footer left",
 			sessionName: "Session name next to the CWD",
 			gitBranch: "Current branch name (or detached HEAD)",
@@ -134,7 +134,7 @@ const COPY = {
 				`${count} ${count === 1 ? "line" : "lines"} / notch`,
 			cursorStyles: { block: "Block", bar: "Bar", underline: "Underline" },
 			icons: { auto: "Auto", nerd: "Nerd", ascii: "ASCII" },
-			borderStyles: { accent: "Accent", thinking: "Thinking", default: "Default" },
+			theme: { "pi-accent": "Accent", "pi-purple": "Purple", dark: "Default" },
 			ms: (count: number) => `${count}ms`,
 			countStrategies: {
 				estimate: "Estimate",
@@ -158,7 +158,7 @@ const COPY = {
 			wheelScrollLines: "鼠标滚轮速度",
 			cursorStyle: "光标样式",
 			iconMode: "图标模式",
-			borderStyle: "边框颜色",
+			theme: "主题",
 			cwd: "当前目录",
 			sessionName: "会话名",
 			gitBranch: "Git 分支",
@@ -202,7 +202,7 @@ const COPY = {
 			wheelScrollLines: "全屏模式下每次滚动滚轮的行数",
 			iconMode: "Nerd Font 图标 vs ASCII 符号（自动检测终端）",
 			cursorStyle: "编辑器里文本光标的形状",
-			borderStyle: "header/编辑器/设置面板边框的颜色（所有 UI 装饰）",
+			theme: "UI 主题：pi-accent / pi-purple / pi-default",
 			cwd: "Footer 左侧显示的工作目录",
 			sessionName: "当前目录旁边的会话名",
 			gitBranch: "当前分支名（或分离 HEAD）",
@@ -222,7 +222,7 @@ const COPY = {
 			wheelLines: (count: number) => `每格 ${count} 行`,
 			cursorStyles: { block: "块", bar: "竖线", underline: "下划线" },
 			icons: { auto: "自动", nerd: "Nerd", ascii: "ASCII" },
-			borderStyles: { accent: "强调色", thinking: "思维色", default: "默认" },
+			theme: { "pi-accent": "强调色", "pi-purple": "紫色", dark: "默认" },
 			ms: (count: number) => `${count}ms`,
 			countStrategies: { estimate: "估算", direct: "直接", chars: "字符÷4" },
 		},
@@ -265,17 +265,6 @@ function cycleIconMode(config: PiTuiConfig): PiTuiConfig {
 		icons: {
 			mode: cycleValue(config.icons.mode, ["auto", "nerd", "ascii"] as const),
 		},
-	};
-}
-
-function cycleBorderStyle(config: PiTuiConfig): PiTuiConfig {
-	return {
-		...config,
-		borderStyle: cycleValue(config.borderStyle, [
-			"accent",
-			"thinking",
-			"default",
-		] as const),
 	};
 }
 
@@ -444,10 +433,10 @@ function buildIconsItems(
 			description: d.cursorStyle,
 		},
 		{
-			id: "borderStyle",
-			label: copy.labels.borderStyle,
-			currentValue: copy.values.borderStyles[config.borderStyle],
-			description: d.borderStyle,
+			id: "theme",
+			label: copy.labels.theme,
+			currentValue: "", // filled in SettingsUi from the active theme name
+			description: d.theme,
 		},
 	];
 }
@@ -650,7 +639,12 @@ function buildMetricsItems(
 	copy: SettingsCopy,
 ): SettingItem[] {
 	return [
-		{ id: "h-speed", label: copy.labels.speedGroup, currentValue: "", header: true },
+		{
+			id: "h-speed",
+			label: copy.labels.speedGroup,
+			currentValue: "",
+			header: true,
+		},
 		...buildSpeedItems(config, copy),
 		{
 			id: "h-telemetry",
@@ -691,7 +685,11 @@ function handleSettingChange(
 	if (tab === "icons") {
 		if (itemId === "mode") return cycleIconMode(config);
 		if (itemId === "cursorStyle") return cycleCursorStyle(config);
-		if (itemId === "borderStyle") return cycleBorderStyle(config);
+		if (itemId === "theme") {
+			// Theme switching persists in pi's settings.json (ctx.ui.setTheme),
+			// not in pi-tui config; keep config unchanged here.
+			return config;
+		}
 	}
 	if (tab === "segments") {
 		return toggleSetting(config, itemId as keyof PiTuiConfig["footerSegments"]);
@@ -734,11 +732,14 @@ interface SettingsUiHandle {
 class SettingsUi implements SettingsUiHandle {
 	private tab: Tab = "features";
 	private config: PiTuiConfig;
+	private themeName: string;
 	private selectedIndex = 0;
 	private readonly selectedItemByTab: Partial<Record<Tab, string>> = {};
 	private readonly theme: Theme;
 	private readonly onChange: (config: PiTuiConfig) => void;
 	private readonly onClose: () => void;
+	/** External effect not representable in PiTuiConfig (e.g. pi theme switch). */
+	private readonly onExternalAction: (itemId: string) => void;
 	/** Border/decoration color, keyed to the current thinking level so the
 	 * settings frame matches the input editor's border exactly. */
 	private readonly getBorder: () => (str: string) => string;
@@ -749,20 +750,28 @@ class SettingsUi implements SettingsUiHandle {
 	constructor(
 		theme: Theme,
 		config: PiTuiConfig,
+		themeName: string,
 		onChange: (config: PiTuiConfig) => void,
 		onClose: () => void,
 		getBorder: () => (str: string) => string,
+		onExternalAction: (itemId: string) => void,
 	) {
 		this.theme = theme;
 		this.config = config;
+		this.themeName = themeName;
 		this.onChange = onChange;
 		this.onClose = onClose;
 		this.getBorder = getBorder;
+		this.onExternalAction = onExternalAction;
 		this.restoreSelection();
 	}
 
 	private items(): SettingItem[] {
-		return buildItems(this.tab, this.config);
+		return buildItems(this.tab, this.config).map((item) =>
+			item.id === "theme"
+				? { ...item, currentValue: this.themeName }
+				: item,
+		);
 	}
 
 	private isSelectable(item: SettingItem | undefined): boolean {
@@ -774,13 +783,20 @@ class SettingsUi implements SettingsUiHandle {
 		const idx = preferred ? this.items().findIndex((i) => i.id === preferred) : 0;
 		this.selectedIndex = idx >= 0 ? idx : 0;
 		// Never land on a header row.
-		if (this.selectedIndex < this.items().length - 1 && !this.isSelectable(this.items()[this.selectedIndex])) {
+		if (
+			this.selectedIndex < this.items().length - 1 &&
+			!this.isSelectable(this.items()[this.selectedIndex])
+		) {
 			this.selectedIndex += 1;
 		}
 	}
 
 	private applySetting(item: SettingItem): void {
 		this.selectedItemByTab[this.tab] = item.id;
+		if (item.id === "theme" && this.tab === "icons") {
+			this.onExternalAction(item.id);
+			return;
+		}
 		this.config = handleSettingChange(this.tab, item, this.config);
 		this.onChange(this.config);
 		this.invalidate();
@@ -925,9 +941,7 @@ class SettingsUi implements SettingsUiHandle {
 		for (const item of visibleItems) {
 			if (item.header) {
 				const label = bold(paint(`─ ${item.label} ─`));
-				lines.push(
-					this.boxLine(truncateToWidth(label, innerWidth), width),
-				);
+				lines.push(this.boxLine(truncateToWidth(label, innerWidth), width));
 				continue;
 			}
 			const isSel = item.id === items[this.selectedIndex]?.id;
@@ -991,50 +1005,84 @@ export function registerSettingsCommand(pi: ExtensionAPI): void {
 	// Non-interactive config writes from other modules should still refresh the footer.
 	subscribeConfig(() => requestFooterRender());
 
+	// The editor-side hijack has no ctx, so the opener captures the most recent
+	// session ctx here (updated on every session_start).
+	let lastCtx: ExtensionContext | undefined;
+
+	const openPanel = async (ctx: ExtensionContext): Promise<boolean> => {
+		if (!ctx.hasUI) return false;
+		await ctx.ui.custom<void>(
+			(tui: TUI, theme, _kb, done) => {
+				const ui = new SettingsUi(
+					theme,
+					getConfig(),
+					(theme as { name?: string }).name ?? "dark",
+					(next) => {
+						const prev = getConfig();
+						updateConfig(next);
+						const controls = getEditorControls();
+						if (next.cursorStyle !== prev.cursorStyle) {
+							controls?.setCursorStyle(next.cursorStyle);
+						}
+						if (
+							next.fullscreen.wheelScrollLines !== prev.fullscreen.wheelScrollLines
+						) {
+							controls?.setWheelScrollLines(next.fullscreen.wheelScrollLines);
+						}
+					},
+					() => done(undefined),
+					() => (s: string) => theme.fg("accent", s),
+					(itemId) => {
+						if (itemId !== "theme") return;
+						const presets = ["pi-accent", "pi-purple", "dark"] as const;
+						const currentName = (ctx.ui.theme as { name?: string }).name ?? "dark";
+						const idx = presets.indexOf(
+							currentName as (typeof presets)[number],
+						);
+						const nextName = presets[(idx + 1) % presets.length] ?? presets[0];
+						ctx.ui.setTheme(nextName);
+					},
+				);
+				return {
+					render: (w: number) => ui.render(w),
+					invalidate: () => ui.invalidate(),
+					handleInput: (data: string) => {
+						ui.handleInput(data);
+						tui.requestRender();
+					},
+				};
+			},
+			{ overlay: true },
+		);
+		// Overlay closed and focus back on the editor. Refresh the footer so
+		// newly toggled segments (notably footer speed) render immediately.
+		requestFooterRender();
+		return true;
+	};
+
+	// Exposed for the pi-editor onSubmit hijack (system /settings override).
+	setSettingsPanelOpener(async () => {
+		if (!lastCtx) return false;
+		return openPanel(lastCtx);
+	});
+
+	pi.on("session_start", (_event, ctx) => {
+		lastCtx = ctx;
+	});
+
 	pi.registerCommand("pi-tui", {
 		description: "Open the Pi TUI settings UI",
 		handler: async (_args, ctx: ExtensionContext) => {
-			if (!ctx.hasUI) return;
-			await ctx.ui.custom<void>(
-				(tui: TUI, theme, _kb, done) => {
-					const ui = new SettingsUi(
-						theme,
-						getConfig(),
-						(next) => {
-							const prev = getConfig();
-							updateConfig(next);
-							const controls = getEditorControls();
-							if (next.cursorStyle !== prev.cursorStyle) {
-								controls?.setCursorStyle(next.cursorStyle);
-							}
-							if (
-								next.fullscreen.wheelScrollLines !== prev.fullscreen.wheelScrollLines
-							) {
-								controls?.setWheelScrollLines(next.fullscreen.wheelScrollLines);
-							}
-						},
-						() => done(undefined),
-						() =>
-							resolveBorderPaint(
-								getConfig(),
-								theme,
-								pi.getThinkingLevel(),
-							) ?? ((s: string) => theme.fg("borderMuted", s)),
-					);
-					return {
-						render: (w: number) => ui.render(w),
-						invalidate: () => ui.invalidate(),
-						handleInput: (data: string) => {
-							ui.handleInput(data);
-							tui.requestRender();
-						},
-					};
-				},
-				{ overlay: true },
-			);
-			// Overlay closed and focus back on the editor. Refresh the footer so
-			// newly toggled segments (notably footer speed) render immediately.
-			requestFooterRender();
+			await openPanel(ctx);
+		},
+	});
+
+	// Extension commands run before built-in slash handlers, so this replaces
+	// the framework's double-line /settings panel with the rounded one.
+	pi.registerCommand("settings", {
+		description: "Open the Pi TUI settings UI",
+		handler: async (_args, ctx: ExtensionContext) => {
+			await openPanel(ctx);
 		},
 	});
 }

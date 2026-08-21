@@ -64,16 +64,12 @@ export interface FullscreenConfig {
 	wheelScrollLines: number;
 }
 
-/** Border chrome color style for header/editor/settings frames. */
-export type BorderStyle = "accent" | "thinking" | "default";
-
 export interface PiTuiConfig {
 	enabled: boolean;
 	settingsLanguage: SettingsLanguage;
 	cursorStyle: CursorStyle;
 	fullscreen: FullscreenConfig;
 	icons: { mode: IconMode };
-	borderStyle: BorderStyle;
 	modules: ModulesConfig;
 	footerSegments: FooterSegments;
 	telemetry: TelemetryConfig;
@@ -86,7 +82,6 @@ export const DEFAULT_CONFIG: PiTuiConfig = {
 	cursorStyle: "block",
 	fullscreen: { wheelScrollLines: DEFAULT_FULLSCREEN_WHEEL_SCROLL_LINES },
 	icons: { mode: "auto" },
-	borderStyle: "accent",
 	modules: {
 		header: true,
 		editor: true,
@@ -186,13 +181,6 @@ function normalizeConfig(config: PiTuiConfig): PiTuiConfig {
 		config.speed.countStrategy !== "chars"
 	) {
 		config.speed.countStrategy = DEFAULT_CONFIG.speed.countStrategy;
-	}
-	if (
-		config.borderStyle !== "accent" &&
-		config.borderStyle !== "thinking" &&
-		config.borderStyle !== "default"
-	) {
-		config.borderStyle = DEFAULT_CONFIG.borderStyle;
 	}
 	return config;
 }
