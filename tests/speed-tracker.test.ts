@@ -58,3 +58,36 @@ test("SpeedTracker: session average accumulates successful messages", () => {
 	tracker.finishMessage(100, undefined);
 	assert.ok(tracker.sessionAvgTokS() !== null);
 });
+
+test("SpeedTracker: provider stream-end usage jump is not fed to live window", () => {
+	let now = 1000;
+	const tracker = new SpeedTracker({
+		...base,
+		useProviderTokens: true,
+		now: () => now,
+		minReliableDurationMs: 0,
+	});
+	tracker.startMessage();
+	// Normal character deltas arrive over time.
+	now += 200;
+	tracker.recordDelta("hello world");
+	const liveBefore = tracker.liveTokS();
+	now += 100;
+	// Provider final chunk reports the whole message usage (500 tokens).
+	tracker.recordDelta("", 500);
+	const liveAfter = tracker.liveTokS();
+	assert.ok(
+		liveBefore !== null && liveAfter !== null,
+		"live speed should be non-null",
+	);
+	// Burst guard: the 500-token jump must not inflate live speed.
+	// (2 tokens over 0.3s ≈ 6.7 tok/s; without the guard it would be ~1667.)
+	assert.ok(
+		liveAfter !== null && liveAfter < 100,
+		`live speed should stay sane (got ${liveAfter})`,
+	);
+	// ...but finishMessage still reconciles to the authoritative total.
+	const r = tracker.finishMessage(500, undefined);
+	assert.ok(r);
+	assert.equal(r.outputTokens, 500);
+});

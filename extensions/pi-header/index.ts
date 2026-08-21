@@ -287,7 +287,7 @@ export class PiHeader implements Component {
 			dim(cwd),
 		];
 
-		const tipDivider = paint("─".repeat(Math.min(contentWidth, 22)));
+		const tipDivider = paint("─".repeat(Math.max(1, contentWidth - 2)));
 		const [cmd0 = "", cmd1 = "", cmd2 = "", cmd3 = ""] = this.tipCommands;
 		const contentBottom: string[] = [
 			tipDivider,

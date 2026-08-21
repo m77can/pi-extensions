@@ -6,6 +6,13 @@
 
 export type CountStrategy = "estimate" | "direct" | "chars";
 
+/**
+ * Single provider usage jump above this is the end-of-stream summary
+ * (pi requests stream_options.include_usage) — it must not enter the live
+ * sliding window, or one chunk inflates the speed to hundreds of tok/s.
+ */
+const MAX_USAGE_JUMP = 100;
+
 export interface TokenEvent {
 	time: number;
 	tokens: number;
@@ -158,7 +165,17 @@ export class TokenSpeedEngine {
 			usageOutput !== undefined &&
 			usageOutput > this._countedUsageOutput
 		) {
-			this.recordTokens(usageOutput - this._countedUsageOutput);
+			const jump = usageOutput - this._countedUsageOutput;
+			// burst guard: pi requests stream_options.include_usage, so providers
+			// (DeepSeek etc.) emit ONE final chunk with the whole message's usage.
+			// A single jump of hundreds of tokens is that end-of-stream summary,
+			// not live decode rate — record it for reconcile but never feed it
+			// into the sliding window (that's the 300+ tok/s spike).
+			if (jump > MAX_USAGE_JUMP) {
+				this._countedUsageOutput = usageOutput;
+				return;
+			}
+			this.recordTokens(jump);
 			this._countedUsageOutput = usageOutput;
 			return;
 		}
@@ -228,8 +245,11 @@ export class SpeedTracker {
 	}
 
 	liveTokS(): number | null {
-		const speed = this.engine.tokS;
-		return speed > 0 ? speed : this.lastStableTokS;
+		const windowed = this.engine.tokS; // sanitized sliding window
+		if (windowed > 0) return windowed;
+		const raw = this.engine.rawTokS; // pre-sanitize live value
+		if (raw > 0) return raw;
+		return this.lastStableTokS;
 	}
 
 	sessionAvgTokS(): number | null {
