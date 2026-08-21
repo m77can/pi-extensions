@@ -25,8 +25,6 @@ interface PiTuiStore {
 	sessionMetrics: SessionMetrics;
 	subscribers: Set<() => void>;
 	requestFooterRender: (() => void) | undefined;
-	/** Rounded /settings replacement opener, provided by pi-settings. */
-	settingsPanelOpener: (() => Promise<boolean>) | undefined;
 	editorControls:
 		| {
 				setCursorStyle: (style: PiTuiConfig["cursorStyle"]) => void;
@@ -62,7 +60,6 @@ function initStore(): PiTuiStore {
 		sessionMetrics: emptySessionMetrics(),
 		subscribers: new Set(),
 		requestFooterRender: undefined,
-		settingsPanelOpener: undefined,
 		editorControls: undefined,
 	};
 	g[STORE_KEY] = store;
@@ -108,16 +105,6 @@ export function setRequestFooterRender(fn: (() => void) | undefined): void {
 
 export function requestFooterRender(): void {
 	initStore().requestFooterRender?.();
-}
-
-export function setSettingsPanelOpener(
-	fn: (() => Promise<boolean>) | undefined,
-): void {
-	initStore().settingsPanelOpener = fn;
-}
-
-export function getSettingsPanelOpener(): (() => Promise<boolean>) | undefined {
-	return initStore().settingsPanelOpener;
 }
 
 export function setEditorControls(

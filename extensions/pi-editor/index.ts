@@ -24,7 +24,6 @@ import {
 	getConfig,
 	setEditorControls,
 	subscribeConfig,
-	getSettingsPanelOpener,
 } from "../../shared/pi-tui-store.js";
 
 function isTuiContext(ctx: ExtensionContext): boolean {
@@ -96,8 +95,6 @@ export class PiEditor extends CustomEditor {
 	private readonly getBorder: (s: string) => string;
 	private cursorStyle: CursorStyle;
 	private previewHardwareCursor = false;
-	private wrappedSubmit: ((text: string) => Promise<void>) | undefined;
-	private readonly piSubmit: ((text: string) => Promise<void>) | undefined;
 
 	constructor(
 		tui: TUI,
@@ -117,42 +114,6 @@ export class PiEditor extends CustomEditor {
 		const frame = paint ?? ((s: string) => editorTheme.borderColor(s));
 		this.getRail = () => frame("│");
 		this.getBorder = frame;
-
-		// Hijack /settings (and /changelog) before pi's hard-coded defaultEditor
-		// onSubmit intercepts them. The framework assigns `defaultEditor.onSubmit`
-		// to us AFTER construction, so we wrap the assignment via a setter.
-		const self = this;
-		const desc = Object.getOwnPropertyDescriptor(
-			CustomEditor.prototype,
-			"onSubmit",
-		);
-		const setter = desc?.set;
-		Object.defineProperty(this, "onSubmit", {
-			configurable: true,
-			get() {
-				return self.wrappedSubmit ?? self.piSubmit;
-			},
-			set(fn: ((text: string) => Promise<void>) | undefined) {
-				(
-					self as unknown as { piSubmit?: (text: string) => Promise<void> }
-				).piSubmit = fn;
-				if (setter) {
-					setter.call(self, fn);
-				}
-				self.wrappedSubmit = fn
-					? async (text: string) => {
-							const trimmed = text.trim();
-							if (trimmed === "/settings") {
-								const opener = getSettingsPanelOpener();
-								if (opener && (await opener())) {
-									return;
-								}
-							}
-							await fn(text);
-						}
-					: undefined;
-			},
-		});
 	}
 
 	override setPaddingX(_padding: number): void {

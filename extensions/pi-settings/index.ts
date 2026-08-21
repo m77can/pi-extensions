@@ -16,7 +16,6 @@ import {
 	subscribeConfig,
 	requestFooterRender,
 	getEditorControls,
-	setSettingsPanelOpener,
 } from "../../shared/pi-tui-store.js";
 import {
 	alignRight,
@@ -1003,10 +1002,6 @@ export function registerSettingsCommand(pi: ExtensionAPI): void {
 	// Non-interactive config writes from other modules should still refresh the footer.
 	subscribeConfig(() => requestFooterRender());
 
-	// The editor-side hijack has no ctx, so the opener captures the most recent
-	// session ctx here (updated on every session_start).
-	let lastCtx: ExtensionContext | undefined;
-
 	const openPanel = async (ctx: ExtensionContext): Promise<boolean> => {
 		if (!ctx.hasUI) return false;
 		await ctx.ui.custom<void>(
@@ -1056,27 +1051,12 @@ export function registerSettingsCommand(pi: ExtensionAPI): void {
 		return true;
 	};
 
-	// Exposed for the pi-editor onSubmit hijack (system /settings override).
-	setSettingsPanelOpener(async () => {
-		if (!lastCtx) return false;
-		return openPanel(lastCtx);
-	});
-
-	pi.on("session_start", (_event, ctx) => {
-		lastCtx = ctx;
-	});
-
 	pi.registerCommand("pi-tui", {
 		description: "Open the Pi TUI settings UI",
 		handler: async (_args, ctx: ExtensionContext) => {
 			await openPanel(ctx);
 		},
 	});
-
-	// /settings hijack: don't registerCommand("settings") — that conflicts with
-	// pi's built-in command and emits an autocomplete warning. The override
-	// happens in the pi-editor onSubmit wrapper instead, which intercepts the
-	// raw text before the framework's hard-coded dispatch.
 }
 
 export default function piSettings(pi: ExtensionAPI): void {
