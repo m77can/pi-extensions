@@ -113,7 +113,7 @@ const COPY = {
 			wheelScrollLines: "Lines scrolled per mouse-wheel notch in fullscreen",
 			iconMode: "Nerd Font icons vs ASCII glyphs (auto-detects terminal)",
 			cursorStyle: "Shape of the text cursor in the editor",
-			theme: "Ui theme: pi-accent / pi-purple / pi-default",
+			theme: "Ui theme: pi-accent / pi-purple / pi-pure / pi-default",
 			cwd: "Working directory shown on the footer left",
 			sessionName: "Session name next to the CWD",
 			gitBranch: "Current branch name (or detached HEAD)",
@@ -136,7 +136,7 @@ const COPY = {
 				`${count} ${count === 1 ? "line" : "lines"} / notch`,
 			cursorStyles: { block: "Block", bar: "Bar", underline: "Underline" },
 			icons: { auto: "Auto", nerd: "Nerd", ascii: "ASCII" },
-			theme: { "pi-accent": "Accent", "pi-purple": "Purple", dark: "Default" },
+			theme: { "pi-accent": "Accent", "pi-purple": "Purple", "pi-pure": "Pure", dark: "Default" },
 			ms: (count: number) => `${count}ms`,
 			countStrategies: {
 				estimate: "Estimate",
@@ -205,7 +205,7 @@ const COPY = {
 			wheelScrollLines: "全屏模式下每次滚动滚轮的行数",
 			iconMode: "Nerd Font 图标 vs ASCII 符号（自动检测终端）",
 			cursorStyle: "编辑器里文本光标的形状",
-			theme: "UI 主题：pi-accent / pi-purple / pi-default",
+			theme: "UI 主题：pi-accent / pi-purple / pi-pure / pi-default",
 			cwd: "Footer 左侧显示的工作目录",
 			sessionName: "当前目录旁边的会话名",
 			gitBranch: "当前分支名（或分离 HEAD）",
@@ -226,7 +226,7 @@ const COPY = {
 			wheelLines: (count: number) => `每格 ${count} 行`,
 			cursorStyles: { block: "块", bar: "竖线", underline: "下划线" },
 			icons: { auto: "自动", nerd: "Nerd", ascii: "ASCII" },
-			theme: { "pi-accent": "强调色", "pi-purple": "紫色", dark: "默认" },
+			theme: { "pi-accent": "强调色", "pi-purple": "紫色", "pi-pure": "Pure", dark: "默认" },
 			ms: (count: number) => `${count}ms`,
 			countStrategies: { estimate: "估算", direct: "直接", chars: "字符÷4" },
 		},
@@ -1047,7 +1047,7 @@ export function registerSettingsCommand(pi: ExtensionAPI): void {
 					() => (s: string) => theme.fg("accent", s),
 					(itemId) => {
 						if (itemId !== "theme") return "";
-						const presets = ["pi-accent", "pi-purple", "dark"] as const;
+						const presets = ["pi-accent", "pi-purple", "pi-pure", "dark"] as const;
 						const currentName = (ctx.ui.theme as { name?: string }).name ?? "dark";
 						const idx = presets.indexOf(currentName as (typeof presets)[number]);
 						const nextName = presets[(idx + 1) % presets.length] ?? presets[0];
