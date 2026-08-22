@@ -87,7 +87,6 @@ const COPY = {
 			routerSpec: "Router spec (recon mode)",
 			chrome: "Rounded system panels",
 			ask: "Questionnaire tool",
-			shell: "Interactive shell",
 			speedEnabled: "Live speed enabled",
 			speedGroup: "Live speed",
 			telemetryGroup: "Per-turn telemetry",
@@ -128,7 +127,6 @@ const COPY = {
 			chrome:
 				"Round the kernel panels (changelog/reload/settings) with ╭─ corners",
 			ask: "Registers the ask_user_question tool with our rounded questionnaire UI",
-			shell: "Suspends pi and opens your login shell (exit to return)",
 		},
 		values: {
 			on: "On",
@@ -191,7 +189,6 @@ const COPY = {
 			routerSpec: "Router spec（侦察模式）",
 			chrome: "系统面板圆角",
 			ask: "提问问卷",
-			shell: "内置 Shell",
 			speedEnabled: "实时速度启用",
 			speedGroup: "实时速度",
 			telemetryGroup: "每轮遥测",
@@ -228,7 +225,6 @@ const COPY = {
 			routerSpec: "首轮 read+bash 侦察，再全量续跑",
 			chrome: "用 ╭─ 圆角替换内核面板（changelog/reload/设置）的横线",
 			ask: "注册 ask_user_question 工具，用圆角问卷界面提问",
-			shell: "挂起 pi 并打开你的登录 shell（exit 返回）",
 		},
 		values: {
 			on: "开启",
@@ -310,13 +306,6 @@ function toggleAsk(config: PiTuiConfig): PiTuiConfig {
 	return {
 		...config,
 		modules: { ...config.modules, ask: !config.modules.ask },
-	};
-}
-
-function toggleShell(config: PiTuiConfig): PiTuiConfig {
-	return {
-		...config,
-		modules: { ...config.modules, shell: !config.modules.shell },
 	};
 }
 
@@ -454,12 +443,6 @@ function buildFeaturesItems(
 			label: copy.labels.ask,
 			currentValue: config.modules.ask ? copy.values.on : copy.values.off,
 			description: d.ask,
-		},
-		{
-			id: "shell",
-			label: copy.labels.shell,
-			currentValue: config.modules.shell ? copy.values.on : copy.values.off,
-			description: d.shell,
 		},
 	];
 }
@@ -732,7 +715,6 @@ function handleSettingChange(
 		if (itemId === "wheelScrollLines") return cycleWheelScrollLines(config);
 		if (itemId === "routerSpec") return toggleRouterSpec(config);
 		if (itemId === "ask") return toggleAsk(config);
-		if (itemId === "shell") return toggleShell(config);
 	}
 	if (tab === "icons") {
 		if (itemId === "mode") return cycleIconMode(config);

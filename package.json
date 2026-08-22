@@ -33,8 +33,7 @@
 			"./extensions/pi-settings/index.ts",
 			"./extensions/pi-router-spec/index.ts",
 			"./extensions/pi-chrome/index.ts",
-			"./extensions/pi-ask/index.ts",
-			"./extensions/pi-shell/index.ts"
+			"./extensions/pi-ask/index.ts"
 		],
 		"themes": [
 			"./themes"
@@ -62,9 +61,5 @@
 		"@earendil-works/pi-tui": "*",
 		"@types/node": "^22.0.0",
 		"typescript": "^5.5.0"
-	},
-	"dependencies": {
-		"@lydell/node-pty": "^1.2.0-beta.15",
-		"@xterm/headless": "^5.5.0"
 	}
 }

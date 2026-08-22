@@ -22,7 +22,6 @@ export interface ModulesConfig {
 	settings: boolean;
 	routerSpec: boolean;
 	ask: boolean;
-	shell: boolean;
 }
 
 export interface FooterSegments {
@@ -92,7 +91,6 @@ export const DEFAULT_CONFIG: PiTuiConfig = {
 		settings: true,
 		routerSpec: true,
 		ask: true,
-		shell: true,
 	},
 	footerSegments: {
 		cwd: true,
