@@ -97,7 +97,8 @@ class ShellSession {
 	private xterm: XTerm | null = null;
 	private tui: TUI | null = null;
 	private cols = 80;
-	private exitedHint = false;
+	private appKeys = false; // DECCKM (?1h) as requested by the shell
+	private modeProbe = "";
 
 	start(tui: TUI): boolean {
 		this.tui = tui;
@@ -117,8 +118,8 @@ class ShellSession {
 		});
 		this.xterm = term;
 		this.proc = proc;
-		this.exitedHint = false;
 		proc.onData((data: string) => {
+			this.trackKeypadMode(data);
 			term.write(data);
 			this.tui?.requestRender();
 		});
@@ -137,6 +138,50 @@ class ShellSession {
 
 	write(data: string): void {
 		this.proc?.write(data);
+	}
+
+	/**
+	 * Track the terminal keypad mode the SHELL requested through its output
+	 * stream: DECCKM (`ESC[?1h` application cursor keys on, `ESC[?1l` off).
+	 * Arrow/Home/End encodings differ between the two modes and the shell
+	 * (zsh ZLE) rejects mismatched sequences — printing fragments like
+	 * `:1C`/`:1D` instead of moving the cursor.
+	 */
+	private trackKeypadMode(data: string): void {
+		this.modeProbe = (this.modeProbe + data).slice(-64);
+		const on = this.modeProbe.lastIndexOf("\x1b[?1h");
+		const off = this.modeProbe.lastIndexOf("\x1b[?1l");
+		if (on >= 0 && on > off) this.appKeys = true;
+		else if (off >= 0 && off > on) this.appKeys = false;
+	}
+
+	/**
+	 * Translate pi key events to the canonical byte sequence the shell's
+	 * current keypad mode expects; returns null when `data` should be passed
+	 * through unchanged (ordinary characters arrive raw).
+	 */
+	private keyToBytes(data: string): string | null {
+		if (matchesKey(data, Key.up)) return this.appKeys ? "\x1bOA" : "\x1b[A";
+		if (matchesKey(data, Key.down)) return this.appKeys ? "\x1bOB" : "\x1b[B";
+		if (matchesKey(data, Key.right)) return this.appKeys ? "\x1bOC" : "\x1b[C";
+		if (matchesKey(data, Key.left)) return this.appKeys ? "\x1bOD" : "\x1b[D";
+		if (matchesKey(data, Key.home)) return this.appKeys ? "\x1bOH" : "\x1b[H";
+		if (matchesKey(data, Key.end)) return this.appKeys ? "\x1bOF" : "\x1b[F";
+		if (matchesKey(data, Key.delete)) return "\x1b[3~";
+		if (matchesKey(data, Key.insert)) return "\x1b[2~";
+		if (matchesKey(data, Key.backspace)) return "\x7f";
+		if (matchesKey(data, Key.enter)) return "\r";
+		if (matchesKey(data, Key.tab)) return "\t";
+		if (matchesKey(data, Key.ctrl("c"))) return "\x03";
+		if (matchesKey(data, Key.ctrl("d"))) return "\x04";
+		if (matchesKey(data, Key.ctrl("z"))) return "\x1a";
+		return null;
+	}
+
+	/** send data translated through keyToBytes */
+	sendKey(data: string): void {
+		const bytes = this.keyToBytes(data) ?? data;
+		this.proc?.write(bytes);
 	}
 
 	resize(cols: number): void {
@@ -232,7 +277,7 @@ export default function piShell(pi: ExtensionAPI): void {
 								done(undefined);
 								return;
 							}
-							sh.write(data);
+							sh.sendKey(data);
 							tui.requestRender();
 						},
 						dispose: () => {},
