@@ -64,14 +64,20 @@ function cellSgrFor(
 /**
  * Translate an xterm buffer line to text WITH attributes: run-length encode
  * per-cell fg/bg/bold/dim/italic/underline into SGR sequences.
+ * `cursorCol` (cell index) gets reverse-video to draw the terminal cursor.
  */
-function lineWithSgr(line: IBufferLine, width: number): string {
+function lineWithSgr(
+	line: IBufferLine,
+	width: number,
+	cursorCol: number | null,
+): string {
 	const parts: string[] = [];
 	let curKey: string | undefined;
 	for (let x = 0; x < Math.min(width, line.length); x++) {
 		const cell = line.getCell(x);
 		if (!cell || cell.getWidth() === 0) continue; // trailing half of CJK
-		const chars = cell.getChars() || " ";
+		let chars = cell.getChars() || " ";
+		if (x === cursorCol) chars = `\x1b[7m${chars}\x1b[0m`;
 		const params = cellSgrFor(cell);
 		const key = params.join(";");
 		if (key !== curKey) {
@@ -216,12 +222,17 @@ class ShellSession {
 		if (!term) return [];
 		const buf = term.buffer.active;
 		const total = buf.length;
+		const start = Math.max(0, total - TERM_ROWS);
 		const out: string[] = [];
-		for (let i = Math.max(0, total - TERM_ROWS); i < total; i++) {
+		for (let i = start; i < total; i++) {
 			const line = buf.getLine(i);
 			if (!line || line.isWrapped) continue;
-			const text = lineWithSgr(line, Math.min(width, this.cols))
-				.replace(/\s+$/g, "");
+			const cursorCol = i === buf.cursorY ? buf.cursorX : null;
+			const text = lineWithSgr(
+				line,
+				Math.min(width, this.cols),
+				cursorCol,
+			).replace(/\s+$/g, "");
 			out.push(truncateToWidth(text, width, ""));
 		}
 		return out;
