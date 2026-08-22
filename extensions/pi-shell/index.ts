@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from "node:child_process";
 import {
 	DynamicBorder,
 	type ExtensionAPI,
@@ -12,118 +11,141 @@ import {
 	type Component,
 	type TUI,
 } from "@earendil-works/pi-tui";
+import * as pty from "@lydell/node-pty";
 import { getConfig } from "../../shared/pi-tui-store.js";
 import { truncateToWidth } from "../../shared/utils.js";
 
 /**
  * pi-shell — an embedded terminal panel inside pi (IDE-style).
  *
- * `/shell` opens a right-side overlay panel hosting a REAL interactive shell:
- * pi's TUI stays visible and interactive; keystrokes are forwarded to the
- * shell's pty and its output renders inside the panel. The shell process is
- * created once per pi session and survives panel close/reopen, so cwd and
- * in-memory state persist; your normal ~/.zsh_history etc. work as usual.
+ * `/shell` opens a right-side overlay panel hosting a REAL interactive shell
+ * via @lydell/node-pty (a maintained node-pty fork with prebuilt binaries):
+ * pi's TUI stays visible; keystrokes go to the pty, its output renders in the
+ * panel. The pty survives panel close/reopen, so cwd and state persist, and
+ * your normal shell rc/history work.
  *
- * PTY: the host `python3 pty.spawn()` provides the pty (node-pty is not a pi
- * dependency and macOS `script(1)` fails on socket stdio — Node pipes are
- * sockets here — with "tcgetattr: Operation not supported on socket").
- * Fallback: direct spawn without a pty (no line editing).
- *
- * Close the panel with Esc (the shell keeps running); kill the shell with
- * Ctrl+D at an empty prompt, or when the session shuts down.
+ * Close the panel with Esc (shell keeps running); exit the shell with Ctrl+D;
+ * kill on session_shutdown.
  */
 
 const MAX_LINES = 300;
 const SHELL_FALLBACK = process.platform === "win32" ? "cmd" : "sh";
 
-const ESC = "\u001b";
-const BS = "\u0008";
-const CR = "\r";
-const BEL = "\u0007";
-const ST = ESC + "\\";
-
 /**
- * Clean a chunk of pty output for plain-line display: drop CSI/OSC control
- * sequences, honor backspace erasing, remove carriage returns.
+ * Clean pty output for plain-line display: strip CSI/OSC escapes and honor
+ * backspace erasing. State-machine based — no regex (control chars in regex
+ * literals broke earlier).
  */
 function sanitizeTerminalText(text: string): string {
-	let out = text
-		// OSC sequences (window title etc.): ESC ] ... BEL/ST
-		.replace(new RegExp(`${ESC}\\][^${BEL}${ESC}]*(?:${BEL}|${ST})`, "g"), "")
-		// Generic CSI: ESC [ params letter (SGR, cursor moves, bracketed paste…)
-		.replace(new RegExp(`${ESC}\\[[0-9;?]*[a-zA-Z]`, "g"), "")
-		// Any other escape lead
-		.replace(new RegExp(`${ESC}[()=>~\\u007f]`, "g"), "");
-	// Backspace erases the previous character (readline echo).
-	while (out.includes(BS)) {
-		const pos = out.indexOf(BS);
-		out = pos === 0 ? out.slice(1) : out.slice(0, pos - 1) + out.slice(pos + 1);
+	let out = "";
+	let i = 0;
+	while (i < text.length) {
+		const c = text.charCodeAt(i);
+		if (c === 0x1b) {
+			// Escape sequence.
+			i++;
+			const next = text.charCodeAt(i);
+			if (next === 0x5b) {
+				// CSI: skip until final byte (0x40–0x7e).
+				i++;
+				while (i < text.length) {
+					const cc = text.charCodeAt(i);
+					if (cc >= 0x40 && cc <= 0x7e) {
+						i++;
+						break;
+					}
+					i++;
+				}
+			} else if (next === 0x5d || next === 0x50 || next === 0x5f || next === 0x58 || next === 0x5e) {
+				// OSC/PM/APC/SOS DCS: skip until BEL (0x07) or ST (ESC \).
+				i++;
+				while (i < text.length) {
+					const cc = text.charCodeAt(i);
+					if (cc === 0x07) {
+						i++;
+						break;
+					}
+					if (cc === 0x1b) {
+						i++;
+						break;
+					}
+					i++;
+				}
+			} else {
+				// Single-char escape (e.g. ESC c): consume the lead only.
+			}
+			continue;
+		}
+		if (c === 0x08) {
+			// Backspace erases previous char (readline echo).
+			if (out.length > 0) out = out.slice(0, -1);
+			i++;
+			continue;
+		}
+		if (c === 0x0d) {
+			// CR: pty emits \r\n; we split on \n, drop the \r.
+			i++;
+			continue;
+		}
+		if (c === 0x09) {
+			out += " ";
+			i++;
+			continue;
+		}
+		out += text[i];
+		i++;
 	}
-	return out.replace(new RegExp(CR, "g"), "");
+	return out;
 }
 
-// ── Shell session (lives across panel open/close) ─────────────────────────
+// ── PTY session (lives across panel open/close) ───────────────────────────
 
 class ShellSession {
-	private child: ChildProcess | null = null;
+	private proc: pty.IPty | null = null;
 	private buf = "";
 	private lines: string[] = [];
 	private tui: TUI | null = null;
 
 	start(tui: TUI): boolean {
 		this.tui = tui;
-		if (this.child) return false;
+		if (this.proc) return false;
 		const shellCmd = process.env.SHELL?.trim() || SHELL_FALLBACK;
-		const env = {
-			...process.env,
-			TERM: process.env.TERM ?? "xterm-256color",
-			PI_SHELL_ARGV: JSON.stringify([shellCmd, "-i"]),
-		};
-		const ptyCode = [
-			"import json, os, pty",
-			"pty.spawn(json.loads(os.environ['PI_SHELL_ARGV']))",
-		].join(";");
-		const child = spawn("python3", ["-c", ptyCode], {
-			stdio: "pipe",
+		const proc = pty.spawn(shellCmd, ["-i"], {
 			cwd: process.cwd(),
-			env,
+			cols: 80,
+			rows: 24,
+			env: { ...process.env, TERM: process.env.TERM ?? "xterm-256color" },
 		});
-		child.on("error", () => {
-			// No python3: last-resort direct spawn (no tty).
-			this.child = spawn(shellCmd, ["-i"], {
-				stdio: "pipe",
-				cwd: process.cwd(),
-				env,
-			});
-		});
-		this.child = child;
-		this.child.stdout?.on("data", (chunk: Buffer) => this.ingest(chunk));
-		this.child.stderr?.on("data", (chunk: Buffer) => this.ingest(chunk));
-		this.child.on("exit", () => {
+		this.proc = proc;
+		proc.onData((data: string) => this.ingest(data));
+		proc.onExit(() => {
 			this.ingest("\n[shell exited — reopen /shell to restart]\n");
-			this.child = null;
+			this.proc = null;
 			this.tui?.requestRender();
 		});
 		return true;
 	}
 
 	alive(): boolean {
-		return this.child !== null;
+		return this.proc !== null;
 	}
 
 	write(data: string): void {
-		this.child?.stdin?.write(data);
+		this.proc?.write(data);
 	}
 
 	kill(): void {
-		if (!this.child) return;
-		this.child.stdin?.end();
-		this.child.kill();
-		this.child = null;
+		if (!this.proc) return;
+		try {
+			this.proc.kill();
+		} catch {
+			// child already gone
+		}
+		this.proc = null;
 	}
 
-	private ingest(chunk: Buffer | string): void {
-		this.buf += chunk.toString();
+	private ingest(chunk: string): void {
+		this.buf += chunk;
 		let idx: number;
 		while ((idx = this.buf.indexOf("\n")) !== -1) {
 			const line = sanitizeTerminalText(this.buf.slice(0, idx));
@@ -181,11 +203,10 @@ export default function piShell(pi: ExtensionAPI): void {
 						render: (w: number) => {
 							const inner = Math.max(1, w - 2);
 							const rows = Math.max(6, 12);
-							const out = sh.visibleLines(rows - 2, inner);
 							const content: string[] = [
 								paint("pi-shell"),
 								dim("─".repeat(inner)),
-								...out,
+								...sh.visibleLines(rows - 2, inner),
 								muted("Esc close · shell keeps running"),
 							];
 							const container = new Container();
