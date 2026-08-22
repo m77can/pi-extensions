@@ -33,7 +33,8 @@
 			"./extensions/pi-settings/index.ts",
 			"./extensions/pi-router-spec/index.ts",
 			"./extensions/pi-chrome/index.ts",
-			"./extensions/pi-ask/index.ts"
+			"./extensions/pi-ask/index.ts",
+			"./extensions/pi-shell/index.ts"
 		],
 		"themes": [
 			"./themes"

@@ -134,7 +134,8 @@ export const TOOL_DESCRIPTION =
 
 export const DECLINE_MESSAGE = "User declined to answer questions";
 export const ENVELOPE_PREFIX = "User has answered your questions:";
-export const ENVELOPE_SUFFIX = "You can now continue with the user's answers in mind.";
+export const ENVELOPE_SUFFIX =
+	"You can now continue with the user's answers in mind.";
 
 export function buildAnswerSegment(a: QuestionAnswer): string {
 	const scalar =
