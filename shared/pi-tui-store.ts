@@ -19,7 +19,7 @@ const STORE_KEY = Symbol.for("pi-tui.store");
 
 interface PiTuiStore {
 	config: PiTuiConfig;
-	/** Single shared speed engine. pi-speed feeds it (data owner); pi-footer only reads sessionAvgTokS(). */
+	/** Shared speed engine, fed by pi-metrics (data owner); other modules read it via this store. */
 	speedTracker: SpeedTracker;
 	/** Whole-session harness metrics, owned by pi-metrics. */
 	sessionMetrics: SessionMetrics;

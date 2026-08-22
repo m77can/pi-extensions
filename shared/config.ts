@@ -47,7 +47,7 @@ export interface TelemetryConfig {
 
 export interface SpeedConfig {
 	enabled: boolean;
-	/** Live tok/s in the streaming working indicator (pi-speed module). */
+	/** Live tok/s in the streaming working indicator (pi-metrics module). */
 	working: boolean;
 	label: string;
 	workingPrefix: string;

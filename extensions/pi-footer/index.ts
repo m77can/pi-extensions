@@ -506,7 +506,7 @@ export default function piFooter(pi: ExtensionAPI): void {
 		state.workingSince = undefined;
 		state.lastDoneIn = undefined;
 		invalidateUsageCache();
-		// Speed data lifecycle (resetSession) is owned by the pi-speed module.
+		// Speed data lifecycle (resetSession) is owned by the pi-metrics module.
 		setupFooter(ctx);
 		if (isTuiContext(ctx)) {
 			void scheduleGitRefresh(ctx);
@@ -546,6 +546,6 @@ export default function piFooter(pi: ExtensionAPI): void {
 
 	pi.on("turn_end", () => {
 		if (!sessionLifecycle.isCurrent()) return;
-		// Speed data lifecycle (stopMessage) is owned by the pi-speed module.
+		// Speed data lifecycle (stopMessage) is owned by the pi-metrics module.
 	});
 }

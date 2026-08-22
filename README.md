@@ -13,12 +13,12 @@ pi install git:github.com/m77can/pi-extensions
 | 模块 | 职责 | UI 槽位 |
 | --- | --- | --- |
 | `pi-header` | logo + model + effort + cwd + slash tips | `setHeader` |
-| `pi-editor` | 圆角边框编辑器 + 光标样式 + 全屏滚轮 | `setEditorComponent` |
-| `pi-footer` | cwd/git/runtime/context/tokens/cost/缓存命中 | `setFooter`（唯一 owner） |
+| `pi-editor` | 圆角边框编辑器（Container + DynamicBorder，圆角由 pi-chrome 统一画）+ 光标样式 + 全屏滚轮 | `setEditorComponent` |
+| `pi-footer` | cwd/git/runtime/context/tokens/扩展状态（tokens 块内显示最近一轮缓存命中率，provider 上报缓存 token 时） | `setFooter`（唯一 owner） |
 | `pi-metrics` | 实时 tok/s（working indicator）+ 每轮 TPS/TTFT/stall 通知 + 累计 metrics | `setWorkingMessage` / `notify` |
 | `pi-settings` | `/pi-tui` 设置面板，统一开关各模块 | 命令 `/pi-tui` |
 | `pi-router-spec` | 首轮 Recon 侦察 → 全量续跑，按模型门控重构 payload | provider payload |
-| `pi-ask` | `ask_user_question` 工具：圆角问卷 UI（同 pi-tui 风格），schema/envelope 对齐 rpiv-ask 契约 | 工具 + `ctx.ui.custom` 浮层 |
+| `pi-ask` | `ask_user_question` 工具：圆角问卷 UI（Container + DynamicBorder，圆角由 pi-chrome 统一画），schema/envelope 对齐 rpiv-ask 契约 | 工具 + `ctx.ui.custom` 面板 |
 
 ## 目录结构
 

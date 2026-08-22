@@ -1,13 +1,16 @@
-import type {
-	ExtensionAPI,
-	ExtensionContext,
-	Theme,
+import {
+	DynamicBorder,
+	type ExtensionAPI,
+	type ExtensionContext,
+	type Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
+	Container,
 	Key,
 	matchesKey,
-	wrapTextWithAnsi,
+	type Component,
 	type TUI,
+	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import type { PiTuiConfig, SettingsLanguage } from "../../shared/config.js";
 import {
@@ -17,12 +20,7 @@ import {
 	requestFooterRender,
 	getEditorControls,
 } from "../../shared/pi-tui-store.js";
-import {
-	alignRight,
-	padRight,
-	truncateToWidth,
-	visibleWidth,
-} from "../../shared/utils.js";
+import { alignRight } from "../../shared/utils.js";
 
 const WHEEL_SCROLL_PRESETS = [1, 4, 7, 10] as const;
 const SPEED_LABEL_PRESETS = ["tok/s", "tokens/s", "tps"] as const;
@@ -778,11 +776,6 @@ class SettingsUi implements SettingsUiHandle {
 	/** External effect not representable in PiTuiConfig (e.g. pi theme switch).
 	 * Returns the new display value for the mutated item. */
 	private readonly onExternalAction: (itemId: string) => string;
-	/** Border/decoration color, keyed to the current thinking level so the
-	 * settings frame matches the input editor's border exactly. */
-	private readonly getBorder: () => (str: string) => string;
-	private cachedWidth: number | undefined;
-	private cachedLines: string[] | undefined;
 	private compact = false;
 
 	constructor(
@@ -791,7 +784,6 @@ class SettingsUi implements SettingsUiHandle {
 		themeName: string,
 		onChange: (config: PiTuiConfig) => void,
 		onClose: () => void,
-		getBorder: () => (str: string) => string,
 		onExternalAction: (itemId: string) => string,
 	) {
 		this.theme = theme;
@@ -799,7 +791,6 @@ class SettingsUi implements SettingsUiHandle {
 		this.themeName = themeName;
 		this.onChange = onChange;
 		this.onClose = onClose;
-		this.getBorder = getBorder;
 		this.onExternalAction = onExternalAction;
 		this.restoreSelection();
 	}
@@ -863,33 +854,6 @@ class SettingsUi implements SettingsUiHandle {
 		this.invalidate();
 	}
 
-	private borderLine(
-		left: string,
-		label: string,
-		right: string,
-		width: number,
-	): string {
-		const paint = this.getBorder();
-		if (width <= 1) return "";
-		if (label.length === 0 || width < 8) {
-			return paint(
-				truncateToWidth(
-					left + "─".repeat(Math.max(0, width - 2)) + right,
-					width,
-					"",
-				),
-			);
-		}
-		const fill = Math.max(0, width - 2 - visibleWidth(label) - 2);
-		return `${paint(left)}${paint(" ")}${label}${paint(" ")}${paint("─".repeat(fill))}${paint(right)}`;
-	}
-
-	private boxLine(content: string, width: number): string {
-		const paint = this.getBorder();
-		if (width <= 2) return truncateToWidth(content, width, "");
-		return `${paint("│")}${padRight(content, width - 2)}${paint("│")}`;
-	}
-
 	handleInput(data: string): void {
 		if (matchesKey(data, Key.tab) || matchesKey(data, Key.right)) {
 			this.switchTab(1);
@@ -924,13 +888,6 @@ class SettingsUi implements SettingsUiHandle {
 	}
 
 	render(width: number): string[] {
-		const compact = width <= 60;
-		if (compact !== this.compact) {
-			this.compact = compact;
-			this.invalidate();
-		}
-		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
-
 		const theme = this.theme;
 		const copy = COPY[this.config.settingsLanguage];
 		const paint = (s: string) => theme.fg("accent", s);
@@ -940,7 +897,8 @@ class SettingsUi implements SettingsUiHandle {
 
 		if (width < 12) return [paint(`pi-tui`)];
 
-		const innerWidth = Math.max(0, width - 2);
+		this.compact = width <= 60;
+		const innerWidth = Math.max(1, width - 2);
 		const items = this.items();
 		const maxVisible = Math.max(3, Math.min(items.length, 12));
 
@@ -953,67 +911,55 @@ class SettingsUi implements SettingsUiHandle {
 		}
 		const visibleItems = items.slice(start, start + maxVisible);
 
-		const lines: string[] = [];
+		const content: string[] = [];
 
-		// Top border carries the title (matches pi-header's border style).
-		lines.push(
-			this.borderLine(
-				"╭",
-				` ${paint(bold("pi-tui"))} ${muted(copy.title)} `,
-				"╮",
-				width,
-			),
-		);
+		// Title row (previously carried by the top border).
+		content.push(`${paint(bold("pi-tui"))} ${muted(copy.title)}`);
 
 		// Tab bar (active tab accent-bracketed, others dim).
 		const tabBar = TABS.map((t) => {
 			const label = copy.tabs[t];
 			return t === this.tab ? paint(bold(`[${label}]`)) : dim(` ${label} `);
 		}).join(" ");
-		lines.push(this.boxLine(truncateToWidth(tabBar, innerWidth), width));
+		content.push(tabBar);
 
 		// Separator.
-		lines.push(this.boxLine(dim("─".repeat(Math.max(0, innerWidth))), width));
+		content.push(dim("─".repeat(innerWidth)));
 
 		// Items: selected row accent-bracketed, value right-aligned (footer style).
 		// Header rows render as dim separators and are never selectable.
 		for (const item of visibleItems) {
 			if (item.header) {
-				const label = bold(paint(`─ ${item.label} ─`));
-				lines.push(this.boxLine(truncateToWidth(label, innerWidth), width));
+				content.push(bold(paint(`─ ${item.label} ─`)));
 				continue;
 			}
 			const isSel = item.id === items[this.selectedIndex]?.id;
 			const prefix = isSel ? paint("▸ ") : "  ";
 			const label = isSel ? paint(bold(item.label)) : item.label;
 			if (this.compact) {
-				lines.push(
-					this.boxLine(
-						truncateToWidth(`${prefix}${label}: ${item.currentValue}`, innerWidth),
-						width,
+				content.push(`${prefix}${label}: ${item.currentValue}`);
+			} else {
+				content.push(
+					alignRight(
+						`${prefix}${label}`,
+						muted(item.currentValue),
+						innerWidth,
+						theme,
 					),
 				);
-			} else {
-				const lineInner = alignRight(
-					`${prefix}${label}`,
-					muted(item.currentValue),
-					innerWidth,
-					theme,
-				);
-				lines.push(this.boxLine(lineInner, width));
 			}
 		}
 
 		// Description panel for the selected item (dim, word-wrapped).
 		const selectedItem = items[this.selectedIndex];
 		if (selectedItem?.description) {
-			lines.push(this.boxLine(dim(" ".repeat(Math.max(0, innerWidth))), width));
+			content.push("");
 			const descWrapped = wrapTextWithAnsi(
 				dim(`ℹ ${selectedItem.description}`),
 				innerWidth,
 			);
 			for (const dl of descWrapped) {
-				lines.push(this.boxLine(padRight(dl, innerWidth), width));
+				content.push(dl);
 			}
 		}
 
@@ -1022,21 +968,32 @@ class SettingsUi implements SettingsUiHandle {
 			const scroll = dim(
 				`${start + 1}-${start + visibleItems.length} / ${items.length}`,
 			);
-			lines.push(this.boxLine(alignRight("", scroll, innerWidth, theme), width));
+			content.push(alignRight("", scroll, innerWidth, theme));
 		}
 
-		// Hint line (dim), then bottom border.
-		lines.push(this.boxLine(dim(truncateToWidth(copy.hint, innerWidth)), width));
-		lines.push(this.borderLine("╰", "", "╯", width));
+		// Hint line, then the frame (pi-chrome patch pairs the borders).
+		content.push(dim(copy.hint));
 
-		this.cachedWidth = width;
-		this.cachedLines = lines.map((l) => truncateToWidth(l, width, ""));
-		return this.cachedLines;
+		// Frame owned by pi-chrome's patch: two DynamicBorder children pair
+		// into ╭─╮ / ╰─╯ and content rows get │ rails automatically.
+		const container = new Container();
+		container.addChild(new DynamicBorder(paint));
+		container.addChild(new LinesComponent(() => content));
+		container.addChild(new DynamicBorder(paint));
+		return container.render(width);
 	}
 
 	invalidate(): void {
-		this.cachedWidth = undefined;
-		this.cachedLines = undefined;
+		// Frame-less content is rebuilt on every render; nothing to cache.
+	}
+}
+
+/** Thin Component adapter around pre-rendered rows. */
+class LinesComponent implements Component {
+	constructor(private readonly getLines: (width: number) => string[]) {}
+	invalidate(): void {}
+	render(width: number): string[] {
+		return this.getLines(width);
 	}
 }
 
@@ -1065,7 +1022,6 @@ export function registerSettingsCommand(pi: ExtensionAPI): void {
 					}
 				},
 				() => done(undefined),
-				() => (s: string) => theme.fg("accent", s),
 				(itemId) => {
 					if (itemId !== "theme") return "";
 					const presets = ["pi-accent", "pi-purple", "pi-pure", "dark"] as const;
