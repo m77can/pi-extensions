@@ -8,7 +8,9 @@ import {
 	Container,
 	Key,
 	matchesKey,
+	parseKey,
 	type Component,
+	type KeyId,
 	type TUI,
 } from "@earendil-works/pi-tui";
 import * as pty from "@lydell/node-pty";
@@ -34,7 +36,9 @@ import { truncateToWidth } from "../../shared/utils.js";
  * session_shutdown, ends the shell.
  */
 
-const TERM_ROWS = 12;
+const TERM_ROWS = 10;
+/** Kitty CSI-u: ESC [ codepoint ; modifiers u (e.g. 8;5u = ctrl+backspace). */
+const CSI_U_RE = /^\x1b\[(\d+)(?:;(\d+))?u$/;
 const SHELL_FALLBACK = process.platform === "win32" ? "cmd" : "sh";
 
 /** SGR params for a cell vs previously applied ones ("" = default). */
@@ -104,6 +108,8 @@ class ShellSession {
 	private tui: TUI | null = null;
 	private cols = 80;
 	private emulatorOutput: { dispose(): void } | null = null;
+	private blinkTimer: ReturnType<typeof setInterval> | null = null;
+	private blinkOn = true;
 
 	start(tui: TUI): boolean {
 		this.tui = tui;
@@ -164,20 +170,44 @@ class ShellSession {
 
 	private keyToBytes(data: string): string | null {
 		const app = this.keypadMode();
-		if (matchesKey(data, Key.up)) return app ? "\x1bOA" : "\x1b[A";
-		if (matchesKey(data, Key.down)) return app ? "\x1bOB" : "\x1b[B";
-		if (matchesKey(data, Key.right)) return app ? "\x1bOC" : "\x1b[C";
-		if (matchesKey(data, Key.left)) return app ? "\x1bOD" : "\x1b[D";
-		if (matchesKey(data, Key.home)) return app ? "\x1bOH" : "\x1b[H";
-		if (matchesKey(data, Key.end)) return app ? "\x1bOF" : "\x1b[F";
-		if (matchesKey(data, Key.delete)) return "\x1b[3~";
-		if (matchesKey(data, Key.insert)) return "\x1b[2~";
-		if (matchesKey(data, Key.backspace)) return "\x7f";
-		if (matchesKey(data, Key.enter)) return "\r";
-		if (matchesKey(data, Key.tab)) return "\t";
-		if (matchesKey(data, Key.ctrl("c"))) return "\x03";
-		if (matchesKey(data, Key.ctrl("d"))) return "\x04";
-		if (matchesKey(data, Key.ctrl("z"))) return "\x1a";
+		// pi forwards kitty-protocol keys; normalize through pi's own parser.
+		const id = parseKey(data) ?? null;
+		const is = (keyId: KeyId) => id === keyId || matchesKey(data, keyId);
+		if (is(Key.up)) return app ? "\x1bOA" : "\x1b[A";
+		if (is(Key.down)) return app ? "\x1bOB" : "\x1b[B";
+		if (is(Key.right)) return app ? "\x1bOC" : "\x1b[C";
+		if (is(Key.left)) return app ? "\x1bOD" : "\x1b[D";
+		if (is(Key.home)) return app ? "\x1bOH" : "\x1b[H";
+		if (is(Key.end)) return app ? "\x1bOF" : "\x1b[F";
+		if (is(Key.delete)) return "\x1b[3~";
+		if (is(Key.insert)) return "\x1b[2~";
+		if (is(Key.backspace)) return "\x7f";
+		if (is(Key.enter)) return "\r";
+		if (is(Key.tab)) return "\t";
+		// Modifier arrows → legacy xterm enhanced sequences.
+		if (id === "ctrl+left") return "\x1b[1;5D";
+		if (id === "ctrl+right") return "\x1b[1;5C";
+		if (id === "ctrl+up") return "\x1b[1;5A";
+		if (id === "ctrl+down") return "\x1b[1;5B";
+		if (id === "alt+left") return "\x1b[1;3D";
+		if (id === "alt+right") return "\x1b[1;3C";
+		if (id === "ctrl+home") return "\x1b[1;5H";
+		if (id === "ctrl+end") return "\x1b[1;5F";
+		if (is(Key.ctrl("c"))) return "\x03";
+		if (is(Key.ctrl("d"))) return "\x04";
+		if (is(Key.ctrl("z"))) return "\x1a";
+		// Unknown kitty CSI-u (e.g. 8;5u = ctrl+shift+backspace): decode
+		// codepoint. Ctrl modifier folds to the control byte; 127 is Delete.
+		const csiU = CSI_U_RE.exec(data);
+		if (csiU) {
+			const code = Number(csiU[1]);
+			const mod = Number(csiU[3] ?? 0);
+			if (mod & 4) {
+				if (code === 8) return "\x08"; // ctrl+backspace
+				if (code === 127) return "\x1b[3;5~"; // ctrl+delete
+				if (code >= 1 && code <= 26) return String.fromCharCode(code);
+			}
+		}
 		return null;
 	}
 
@@ -204,7 +234,24 @@ class ShellSession {
 		this.tui?.requestRender();
 	}
 
+	/** Cursor blink drives re-renders while the panel is open. */
+	attachBlink(): void {
+		if (this.blinkTimer) return;
+		this.blinkOn = true;
+		this.blinkTimer = setInterval(() => {
+			this.blinkOn = !this.blinkOn;
+			this.tui?.requestRender();
+		}, 530);
+	}
+
+	detachBlink(): void {
+		if (this.blinkTimer) clearInterval(this.blinkTimer);
+		this.blinkTimer = null;
+		this.blinkOn = true;
+	}
+
 	kill(): void {
+		this.detachBlink();
 		this.emulatorOutput?.dispose();
 		this.emulatorOutput = null;
 		if (!this.proc) return;
@@ -270,6 +317,7 @@ export default function piShell(pi: ExtensionAPI): void {
 				(tui: TUI, theme: Theme, _kb, done) => {
 					const sh = session as ShellSession;
 					sh.start(tui);
+					sh.attachBlink();
 					const dim = (s: string) => theme.fg("dim", s);
 					const paint = (s: string) => theme.fg("accent", s);
 					const muted = (s: string) => theme.fg("muted", s);
@@ -293,13 +341,14 @@ export default function piShell(pi: ExtensionAPI): void {
 						invalidate: () => {},
 						handleInput: (data: string) => {
 							if (matchesKey(data, Key.ctrl("g"))) {
+								sh.detachBlink();
 								done(undefined);
 								return;
 							}
 							sh.sendKey(data);
 							tui.requestRender();
 						},
-						dispose: () => {},
+						dispose: () => sh.detachBlink(),
 					};
 				},
 			);
