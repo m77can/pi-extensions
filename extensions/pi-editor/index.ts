@@ -1,25 +1,24 @@
 import {
 	CustomEditor,
+	DynamicBorder,
 	type ExtensionAPI,
 	type ExtensionContext,
 	type KeybindingsManager,
 } from "@earendil-works/pi-coding-agent";
-import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
 import {
 	CURSOR_MARKER,
 	truncateToWidth,
-	visibleWidth,
+	type Component,
+	type EditorTheme,
+	type TUI,
+	Container,
 } from "@earendil-works/pi-tui";
 import type { CursorStyle } from "../../shared/config.js";
 import {
 	applyFullscreenWheelScrollLines,
 	DEFAULT_FULLSCREEN_WHEEL_SCROLL_LINES,
 } from "../../shared/fullscreen-scroll.js";
-import {
-	findBottomBorderIndex,
-	isEditorBorderLine,
-	stripAnsi,
-} from "../../shared/utils.js";
+import { findBottomBorderIndex, stripAnsi } from "../../shared/utils.js";
 import {
 	getConfig,
 	setEditorControls,
@@ -33,12 +32,6 @@ function isTuiContext(ctx: ExtensionContext): boolean {
 	} catch {
 		return false;
 	}
-}
-
-function fillLine(content: string, width: number): string {
-	const truncated = truncateToWidth(content, Math.max(0, width), "");
-	const pad = " ".repeat(Math.max(0, width - visibleWidth(truncated)));
-	return `${truncated}${pad}`;
 }
 
 const CURSOR_STYLE_SEQUENCES: Partial<Record<CursorStyle, string>> = {
@@ -65,34 +58,39 @@ function configureCursor(tui: TUI, cursorStyle: CursorStyle): void {
 	if (sequence) tui.terminal.write(sequence);
 }
 
-function roundedBorder(
-	width: number,
-	kind: "top" | "bottom",
-	paint: (s: string) => string,
-	sourceLine?: string,
-): string {
-	if (width < 2)
-		return paint(truncateToWidth(kind === "top" ? "╭╮" : "╰╯", width, ""));
-	const corners = kind === "top" ? (["╭", "╮"] as const) : (["╰", "╯"] as const);
+/** Scroll label the stock editor embeds in its border lines: `↑ N more`. */
+const SCROLL_LABEL_RE = /([↑↓]\s+\d+\s+more)/;
 
-	if (sourceLine) {
-		const plain = stripAnsi(sourceLine);
-		const scrollMatch = plain.match(/([↑↓]\s+\d+\s+more)/);
-		if (scrollMatch) {
-			const label = `─── ${scrollMatch[1]} `;
-			const fill = Math.max(0, width - 2 - visibleWidth(label));
-			return paint(`${corners[0]}${label}${"─".repeat(fill)}${corners[1]}`);
-		}
-	}
-
-	return paint(
-		`${corners[0]}${"─".repeat(Math.max(0, width - 2))}${corners[1]}`,
-	);
+function extractScrollLabel(line: string | undefined): string {
+	if (!line) return "";
+	const match = stripAnsi(line).match(SCROLL_LABEL_RE);
+	return match ? `\x1b[2m${match[1]}\x1b[0m` : "";
 }
 
+/** Thin Component adapter around pre-rendered lines. */
+class LinesComponent implements Component {
+	constructor(private readonly getLines: (width: number) => string[]) {}
+	invalidate(): void {}
+	render(width: number): string[] {
+		return this.getLines(width);
+	}
+}
+
+/**
+ * PiEditor — the stock multiline editor, framed by a Container with two
+ * DynamicBorder children. pi-chrome's `Container.prototype.render` patch pairs
+ * those borders into the ╭─╮ rounded frame and rails the rows in between, so
+ * this class carries no per-editor corner/rail painting of its own.
+ *
+ * The frame color reads `this.borderColor` at render time (closure), so
+ * thinking-level / bash-mode recolors keep working like the built-in editor.
+ *
+ * IMPORTANT: render() must re-run `super.render` on EVERY call — the stock
+ * editor re-lays out its text each render, and the TUI calls render() directly
+ * after keystrokes (it does not invalidate). Caching base lines per width here
+ * made fresh keystrokes invisible (stale lines) — do not add a cache back.
+ */
 export class PiEditor extends CustomEditor {
-	private readonly getRail: () => string;
-	private readonly getBorder: (s: string) => string;
 	private cursorStyle: CursorStyle;
 	private previewHardwareCursor = false;
 
@@ -105,16 +103,10 @@ export class PiEditor extends CustomEditor {
 		super(tui, editorTheme, keybindings, { paddingX: 0 });
 		this.cursorStyle = cursorStyle;
 		configureCursor(tui, cursorStyle);
-		// pi-ui-style: the rounded frame follows `this.borderColor`, which pi's
-		// framework recolors live on thinking-level / bash-mode changes
-		// (updateEditorBorderColor). Reading it at render time means the frame
-		// always matches the framework's current border color.
-		this.getRail = () => this.borderColor("│");
-		this.getBorder = (s: string) => this.borderColor(s);
 	}
 
 	override setPaddingX(_padding: number): void {
-		// The custom rail owns the horizontal inset and keeps one stable text gap.
+		// The container frame owns the inset; keep a stable full-width layout.
 		super.setPaddingX(0);
 	}
 
@@ -133,6 +125,7 @@ export class PiEditor extends CustomEditor {
 		this.tui.requestRender();
 	}
 
+	/** Stock editor output: border / content / border / autocomplete tail. */
 	private renderBase(width: number): string[] {
 		const renderedLines = super.render(width);
 		if (this.cursorStyle === "block") return renderedLines;
@@ -152,34 +145,32 @@ export class PiEditor extends CustomEditor {
 	render(width: number): string[] {
 		if (width < 4) return this.renderBase(width);
 
-		const rail = this.getRail();
-		const borderPaint = this.getBorder;
-		// 1-char rail + 1-char gap on each side = 4 chars of chrome.
-		const innerWidth = Math.max(0, width - 4);
+		// Layout stock content at the frame's inner width (rails take 2 cols).
+		const innerWidth = Math.max(1, width - 2);
+		// Fresh every frame: the stock editor's layout lives inside
+		// super.render; caching here hides keystrokes (see class doc).
 		const baseLines = this.renderBase(innerWidth);
 		const bottomIdx = findBottomBorderIndex(baseLines);
+		const topLabel = extractScrollLabel(baseLines[0]);
+		const bottomLabel = extractScrollLabel(baseLines[bottomIdx]);
+		const bodyLines = baseLines.slice(1, Math.max(1, bottomIdx));
+		const tailLines = baseLines.slice(Math.max(0, bottomIdx + 1));
 
-		const result: string[] = [];
-		result.push(roundedBorder(width, "top", borderPaint, baseLines[0]));
+		const paint = (s: string) => this.borderColor(s);
+		const container = new Container();
+		container.addChild(new DynamicBorder(paint));
+		if (topLabel) container.addChild(new LinesComponent(() => [topLabel]));
+		container.addChild(new LinesComponent(() => bodyLines));
+		if (bottomLabel) container.addChild(new LinesComponent(() => [bottomLabel]));
+		container.addChild(new DynamicBorder(paint));
+		// Autocomplete popup renders below the frame, at full width (children
+		// after the last border are exempt from rails in the patch).
+		if (tailLines.length > 0)
+			container.addChild(new LinesComponent(() => tailLines));
 
-		for (let i = 1; i < bottomIdx; i++) {
-			const line = baseLines[i] ?? "";
-			if (isEditorBorderLine(line)) {
-				result.push(`${rail} ${fillLine("", innerWidth)} ${rail}`);
-			} else {
-				result.push(`${rail} ${fillLine(line, innerWidth)} ${rail}`);
-			}
-		}
-
-		result.push(
-			roundedBorder(width, "bottom", borderPaint, baseLines[bottomIdx]),
-		);
-
-		for (let i = bottomIdx + 1; i < baseLines.length; i++) {
-			result.push(baseLines[i]!);
-		}
-
-		return result.map((line) => truncateToWidth(line, width, ""));
+		return container
+			.render(width)
+			.map((line) => truncateToWidth(line, width, ""));
 	}
 }
 
