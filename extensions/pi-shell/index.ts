@@ -12,25 +12,83 @@ import {
 	type TUI,
 } from "@earendil-works/pi-tui";
 import * as pty from "@lydell/node-pty";
-import { Terminal as XTerm } from "@xterm/headless";
+import {
+	Terminal as XTerm,
+	type IBufferLine,
+} from "@xterm/headless";
 import { getConfig } from "../../shared/pi-tui-store.js";
 import { truncateToWidth } from "../../shared/utils.js";
 
 /**
  * pi-shell — an embedded terminal panel inside pi (IDE-style).
  *
- * `/shell` opens a right-side overlay panel hosting a REAL interactive shell
- * (pty via @lydell/node-pty). pi's TUI stays visible; keystrokes go to the
- * pty. Output is rendered through @xterm/headless — a maintained terminal
- * emulator — so prompt redraws, line editing, colors and cursor movement are
- * handled like a real terminal instead of being hand-parsed.
+ * `/shell` swaps the editor slot for a split-panel hosting a REAL interactive
+ * shell (pty via @lydell/node-pty): the chat stays on top and the shell
+ * occupies the bottom area, like a tui IDE split. Keystrokes are forwarded to
+ * the pty; its output is rendered through @xterm/headless, including per-cell
+ * colors re-emitted as SGR — so zsh autosuggestions keep their grey look and
+ * stay distinguishable from real input.
  *
- * The pty survives panel close/reopen (Esc closes, shell keeps running).
- * Ctrl+D at the prompt exits the shell; session_shutdown kills it.
+ * Ctrl+G closes the panel (the pty keeps running; /shell reopens it). Esc is
+ * forwarded to the shell (vim etc. work). Ctrl+D at the prompt, or
+ * session_shutdown, ends the shell.
  */
 
-const PANEL_ROWS = 12;
+const TERM_ROWS = 12;
 const SHELL_FALLBACK = process.platform === "win32" ? "cmd" : "sh";
+
+/** SGR params for a cell vs previously applied ones ("" = default). */
+function cellSgrFor(
+	cell: NonNullable<ReturnType<IBufferLine["getCell"]>>,
+): number[] {
+	const params: number[] = [];
+	if (cell.isBold()) params.push(1);
+	if (cell.isDim()) params.push(2);
+	if (cell.isItalic()) params.push(3);
+	if (cell.isUnderline()) params.push(4);
+	if (cell.isFgRGB()) {
+		const c = cell.getFgColor();
+		params.push(38, 2, (c >> 16) & 255, (c >> 8) & 255, c & 255);
+	} else if (cell.isFgPalette()) {
+		params.push(38, 5, cell.getFgColor());
+	}
+	if (cell.isBgRGB()) {
+		const c = cell.getBgColor();
+		params.push(48, 2, (c >> 16) & 255, (c >> 8) & 255, c & 255);
+	} else if (cell.isBgPalette()) {
+		params.push(48, 5, cell.getBgColor());
+	}
+	return params;
+}
+
+/**
+ * Translate an xterm buffer line to text WITH attributes: run-length encode
+ * per-cell fg/bg/bold/dim/italic/underline into SGR sequences.
+ */
+function lineWithSgr(line: IBufferLine, width: number): string {
+	const parts: string[] = [];
+	let curKey: string | undefined;
+	for (let x = 0; x < Math.min(width, line.length); x++) {
+		const cell = line.getCell(x);
+		if (!cell || cell.getWidth() === 0) continue; // trailing half of CJK
+		const chars = cell.getChars() || " ";
+		const params = cellSgrFor(cell);
+		const key = params.join(";");
+		if (key !== curKey) {
+			parts.push(
+				ParamsToSgr(key === "" ? [0] : [0, ...params]),
+			);
+			curKey = key;
+		}
+		parts.push(chars);
+	}
+	if (curKey !== undefined && curKey !== "") parts.push("\x1b[0m");
+	return parts.join("");
+}
+
+function ParamsToSgr(params: number[]): string {
+	return `\x1b[${params.join(";")}m`;
+}
 
 // ── PTY + terminal-emulator session (lives across panel open/close) ───────
 
@@ -39,6 +97,7 @@ class ShellSession {
 	private xterm: XTerm | null = null;
 	private tui: TUI | null = null;
 	private cols = 80;
+	private exitedHint = false;
 
 	start(tui: TUI): boolean {
 		this.tui = tui;
@@ -46,24 +105,25 @@ class ShellSession {
 		const shellCmd = process.env.SHELL?.trim() || SHELL_FALLBACK;
 		const term = new XTerm({
 			cols: this.cols,
-			rows: PANEL_ROWS,
+			rows: TERM_ROWS,
 			scrollback: 2000,
 			allowProposedApi: true,
 		});
 		const proc = pty.spawn(shellCmd, ["-i"], {
 			cwd: process.cwd(),
 			cols: this.cols,
-			rows: PANEL_ROWS,
+			rows: TERM_ROWS,
 			env: { ...process.env, TERM: process.env.TERM ?? "xterm-256color" },
 		});
 		this.xterm = term;
 		this.proc = proc;
+		this.exitedHint = false;
 		proc.onData((data: string) => {
 			term.write(data);
 			this.tui?.requestRender();
 		});
 		proc.onExit(() => {
-			term.write("\r\n[shell exited — reopen /shell to restart]\r\n");
+			term.write("\r\n[shell exited — Ctrl+G close, /shell restarts]\r\n");
 			this.tui?.requestRender();
 			this.proc = null;
 			this.xterm = null;
@@ -82,8 +142,8 @@ class ShellSession {
 	resize(cols: number): void {
 		if (cols < 4 || cols === this.cols) return;
 		this.cols = cols;
-		this.xterm?.resize(cols, PANEL_ROWS);
-		this.proc?.resize(cols, PANEL_ROWS);
+		this.xterm?.resize(cols, TERM_ROWS);
+		this.proc?.resize(cols, TERM_ROWS);
 		this.tui?.requestRender();
 	}
 
@@ -104,10 +164,11 @@ class ShellSession {
 		const buf = term.buffer.active;
 		const total = buf.length;
 		const out: string[] = [];
-		for (let i = Math.max(0, total - PANEL_ROWS); i < total; i++) {
+		for (let i = Math.max(0, total - TERM_ROWS); i < total; i++) {
 			const line = buf.getLine(i);
 			if (!line || line.isWrapped) continue;
-			const text = line.translateToString(false).replace(/\s+$/g, "");
+			const text = lineWithSgr(line, Math.min(width, this.cols))
+				.replace(/\s+$/g, "");
 			out.push(truncateToWidth(text, width, ""));
 		}
 		return out;
@@ -157,7 +218,7 @@ export default function piShell(pi: ExtensionAPI): void {
 								paint("pi-shell"),
 								dim("─".repeat(inner)),
 								...sh.visibleLines(inner),
-								muted("Esc close · shell keeps running"),
+								muted("Ctrl+G close · shell keeps running"),
 							];
 							const container = new Container();
 							container.addChild(new DynamicBorder(paint));
@@ -167,7 +228,7 @@ export default function piShell(pi: ExtensionAPI): void {
 						},
 						invalidate: () => {},
 						handleInput: (data: string) => {
-							if (matchesKey(data, Key.escape)) {
+							if (matchesKey(data, Key.ctrl("g"))) {
 								done(undefined);
 								return;
 							}
@@ -176,16 +237,6 @@ export default function piShell(pi: ExtensionAPI): void {
 						},
 						dispose: () => {},
 					};
-				},
-				{
-					overlay: true,
-					overlayOptions: {
-						anchor: "right-center",
-						width: "45%",
-						minWidth: 30,
-						maxHeight: "85%",
-						margin: { top: 2, bottom: 2, left: 0, right: 1 },
-					},
 				},
 			);
 		},
