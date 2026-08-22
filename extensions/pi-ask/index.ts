@@ -1,12 +1,13 @@
-import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder, type ExtensionAPI, type Theme } from "@earendil-works/pi-coding-agent";
 import {
+	Container,
 	Key,
 	matchesKey,
+	type Component,
 	type TUI,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { padRight, truncateToWidth } from "../../shared/utils.js";
 import { getConfig } from "../../shared/pi-tui-store.js";
 
 /**
@@ -244,8 +245,6 @@ class AskUi {
 	private draft = "";
 	private multiChecked = new Map<number, Set<string>>();
 	private readonly answered = new Map<number, QuestionAnswer>();
-	private cachedWidth: number | undefined;
-	private cachedLines: string[] | undefined;
 
 	constructor(
 		params: QuestionParams,
@@ -358,7 +357,6 @@ class AskUi {
 			return;
 		}
 
-		const q = this.currentQuestion();
 		if (matchesKey(data, Key.escape)) {
 			this.onDone({
 				answers: Array.from(this.answered.values()),
@@ -435,6 +433,8 @@ class AskUi {
 		}
 	}
 
+	// Content rows only — no frame/padding. The frame is drawn by
+	// pi-chrome's Container.render patch around the DynamicBorder pair.
 	render(width: number): string[] {
 		const theme = this.theme;
 		const paint = (s: string) => theme.fg("accent", s);
@@ -442,13 +442,9 @@ class AskUi {
 		const muted = (s: string) => theme.fg("muted", s);
 		const bold = (s: string) => theme.bold(s);
 
-		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
-
-		const innerWidth = Math.max(10, width - 2);
+		const innerWidth = Math.max(1, width - 2);
 		const q = this.currentQuestion();
-		const lines: string[] = [];
-
-		lines.push(paint(`╭${"─".repeat(Math.max(0, width - 2))}╮`));
+		const content: string[] = [];
 
 		// Header row: [tab chip] question
 		const tabChips = this.params.questions
@@ -458,14 +454,9 @@ class AskUi {
 					: dim(` ${i + 1} `),
 			)
 			.join(" ");
-		lines.push(`${paint("│")}${padRight(tabChips, innerWidth)}${paint("│")}`);
-		lines.push(
-			`${paint("│")}${padRight(
-				truncateToWidth(q.question, innerWidth),
-				innerWidth,
-			)}${paint("│")}`,
-		);
-		lines.push(`${paint("│")}${dim("─".repeat(innerWidth))}${paint("│")}`);
+		content.push(tabChips);
+		content.push(q.question);
+		content.push(dim("─".repeat(innerWidth)));
 
 		// Options
 		const rows = this.rows();
@@ -487,42 +478,51 @@ class AskUi {
 			}
 			const opt = q.options[i];
 			const desc = opt && !this.inputMode && isSel ? `  ${opt.description}` : "";
-			lines.push(
-				`${paint("│")}${padRight(truncateToWidth(`${prefix}${label}${desc}`, innerWidth), innerWidth)}${paint("│")}`,
-			);
+			content.push(`${prefix}${label}${desc}`);
 		}
 
 		// Input row (custom text)
 		if (this.inputMode) {
-			lines.push(
-				`${paint("│")}${dim(padRight(`${q.ui?.inputPrompt ?? "Type: "}${this.draft}▌`, innerWidth))}${paint("│")}`,
+			content.push(
+				dim(`${q.ui?.inputPrompt ?? "Type: "}${this.draft}▌`),
 			);
 		}
 
 		// Preview panel for selected single-select option
 		const selectedOpt = this.inputMode ? undefined : q.options[this.optionIndex];
 		if (selectedOpt?.preview && !q.multiSelect && selectedOpt !== undefined) {
-			lines.push(`${paint("│")}${dim(" ".repeat(innerWidth))}${paint("│")}`);
+			content.push("");
 			const wrapped = wrapTextWithAnsi(dim(selectedOpt.preview), innerWidth - 2);
 			for (const wl of wrapped) {
-				lines.push(`${paint("│")}${padRight(`  ${wl}`, innerWidth)}${paint("│")}`);
+				content.push(`  ${wl}`);
 			}
 		}
 
 		// Hint（默认英文；模型可生成对应语言按键提示）
-		lines.push(
-			`${paint("│")}${dim(padRight(q.ui?.hint ?? "↑/↓ move · Enter/Space select · Tab switch · Esc cancel", innerWidth))}${paint("│")}`,
+		content.push(
+			dim(q.ui?.hint ?? "↑/↓ move · Enter/Space select · Tab switch · Esc cancel"),
 		);
-		lines.push(paint(`╰${"─".repeat(Math.max(0, width - 2))}╯`));
 
-		this.cachedWidth = width;
-		this.cachedLines = lines.map((l) => truncateToWidth(l, width, ""));
-		return this.cachedLines;
+		// Frame owned by pi-chrome's patch: two DynamicBorder children pair
+		// into ╭─╮ / ╰─╯ and content rows get │ rails automatically.
+		const container = new Container();
+		container.addChild(new DynamicBorder(paint));
+		container.addChild(new LinesComponent(() => content));
+		container.addChild(new DynamicBorder(paint));
+		return container.render(width);
 	}
 
 	invalidate(): void {
-		this.cachedWidth = undefined;
-		this.cachedLines = undefined;
+		// Frame-less content is rebuilt on every render; nothing to cache.
+	}
+}
+
+/** Thin Component adapter around pre-rendered rows. */
+class LinesComponent implements Component {
+	constructor(private readonly getLines: (width: number) => string[]) {}
+	invalidate(): void {}
+	render(width: number): string[] {
+		return this.getLines(width);
 	}
 }
 
