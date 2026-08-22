@@ -1,4 +1,8 @@
-import { DynamicBorder, type ExtensionAPI, type Theme } from "@earendil-works/pi-coding-agent";
+import {
+	DynamicBorder,
+	type ExtensionAPI,
+	type Theme,
+} from "@earendil-works/pi-coding-agent";
 import {
 	Container,
 	Key,
@@ -483,9 +487,7 @@ class AskUi {
 
 		// Input row (custom text)
 		if (this.inputMode) {
-			content.push(
-				dim(`${q.ui?.inputPrompt ?? "Type: "}${this.draft}▌`),
-			);
+			content.push(dim(`${q.ui?.inputPrompt ?? "Type: "}${this.draft}▌`));
 		}
 
 		// Preview panel for selected single-select option
