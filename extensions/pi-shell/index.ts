@@ -13,7 +13,7 @@ import {
 	type TUI,
 } from "@earendil-works/pi-tui";
 import { getConfig } from "../../shared/pi-tui-store.js";
-import { stripAnsi, truncateToWidth } from "../../shared/utils.js";
+import { truncateToWidth } from "../../shared/utils.js";
 
 /**
  * pi-shell — an embedded terminal panel inside pi (IDE-style).
@@ -24,9 +24,10 @@ import { stripAnsi, truncateToWidth } from "../../shared/utils.js";
  * created once per pi session and survives panel close/reopen, so cwd and
  * in-memory state persist; your normal ~/.zsh_history etc. work as usual.
  *
- * PTY: the host `script -q /dev/null $SHELL` utility provides the pty
- * (node-pty is not a pi dependency). Fallback (no script binary) still
- * forwards I/O, just without line editing.
+ * PTY: the host `python3 pty.spawn()` provides the pty (node-pty is not a pi
+ * dependency and macOS `script(1)` fails on socket stdio — Node pipes are
+ * sockets here — with "tcgetattr: Operation not supported on socket").
+ * Fallback: direct spawn without a pty (no line editing).
  *
  * Close the panel with Esc (the shell keeps running); kill the shell with
  * Ctrl+D at an empty prompt, or when the session shuts down.
@@ -34,6 +35,32 @@ import { stripAnsi, truncateToWidth } from "../../shared/utils.js";
 
 const MAX_LINES = 300;
 const SHELL_FALLBACK = process.platform === "win32" ? "cmd" : "sh";
+
+const ESC = "\u001b";
+const BS = "\u0008";
+const CR = "\r";
+const BEL = "\u0007";
+const ST = ESC + "\\";
+
+/**
+ * Clean a chunk of pty output for plain-line display: drop CSI/OSC control
+ * sequences, honor backspace erasing, remove carriage returns.
+ */
+function sanitizeTerminalText(text: string): string {
+	let out = text
+		// OSC sequences (window title etc.): ESC ] ... BEL/ST
+		.replace(new RegExp(`${ESC}\\][^${BEL}${ESC}]*(?:${BEL}|${ST})`, "g"), "")
+		// Generic CSI: ESC [ params letter (SGR, cursor moves, bracketed paste…)
+		.replace(new RegExp(`${ESC}\\[[0-9;?]*[a-zA-Z]`, "g"), "")
+		// Any other escape lead
+		.replace(new RegExp(`${ESC}[()=>~\\u007f]`, "g"), "");
+	// Backspace erases the previous character (readline echo).
+	while (out.includes(BS)) {
+		const pos = out.indexOf(BS);
+		out = pos === 0 ? out.slice(1) : out.slice(0, pos - 1) + out.slice(pos + 1);
+	}
+	return out.replace(new RegExp(CR, "g"), "");
+}
 
 // ── Shell session (lives across panel open/close) ─────────────────────────
 
@@ -47,20 +74,32 @@ class ShellSession {
 		this.tui = tui;
 		if (this.child) return false;
 		const shellCmd = process.env.SHELL?.trim() || SHELL_FALLBACK;
-		// script(1) hands the child a real tty → line editing, history, prompt.
-		const child = spawn(
-			"script",
-			["-q", "/dev/null", shellCmd, "-i"],
-			{
+		const env = {
+			...process.env,
+			TERM: process.env.TERM ?? "xterm-256color",
+			PI_SHELL_ARGV: JSON.stringify([shellCmd, "-i"]),
+		};
+		const ptyCode = [
+			"import json, os, pty",
+			"pty.spawn(json.loads(os.environ['PI_SHELL_ARGV']))",
+		].join(";");
+		const child = spawn("python3", ["-c", ptyCode], {
+			stdio: "pipe",
+			cwd: process.cwd(),
+			env,
+		});
+		child.on("error", () => {
+			// No python3: last-resort direct spawn (no tty).
+			this.child = spawn(shellCmd, ["-i"], {
 				stdio: "pipe",
 				cwd: process.cwd(),
-				env: { ...process.env, TERM: process.env.TERM ?? "xterm-256color" },
-			},
-		);
+				env,
+			});
+		});
 		this.child = child;
-		child.stdout?.on("data", (chunk: Buffer) => this.ingest(chunk));
-		child.stderr?.on("data", (chunk: Buffer) => this.ingest(chunk));
-		child.on("exit", () => {
+		this.child.stdout?.on("data", (chunk: Buffer) => this.ingest(chunk));
+		this.child.stderr?.on("data", (chunk: Buffer) => this.ingest(chunk));
+		this.child.on("exit", () => {
 			this.ingest("\n[shell exited — reopen /shell to restart]\n");
 			this.child = null;
 			this.tui?.requestRender();
@@ -87,10 +126,8 @@ class ShellSession {
 		this.buf += chunk.toString();
 		let idx: number;
 		while ((idx = this.buf.indexOf("\n")) !== -1) {
-			let line = this.buf.slice(0, idx);
-			// The pty echoes carriage returns; keep lines clean for display.
-			line = line.replace(/\r/g, "").replace(/\x1b[^a-zA-Z]*[a-zA-Z]/g, "");
-			this.lines.push(stripAnsi(line));
+			const line = sanitizeTerminalText(this.buf.slice(0, idx));
+			if (line.length > 0) this.lines.push(line);
 			this.buf = this.buf.slice(idx + 1);
 		}
 		if (this.lines.length > MAX_LINES)
@@ -144,10 +181,11 @@ export default function piShell(pi: ExtensionAPI): void {
 						render: (w: number) => {
 							const inner = Math.max(1, w - 2);
 							const rows = Math.max(6, 12);
+							const out = sh.visibleLines(rows - 2, inner);
 							const content: string[] = [
 								paint("pi-shell"),
 								dim("─".repeat(inner)),
-								...sh.visibleLines(rows - 2, inner),
+								...out,
 								muted("Esc close · shell keeps running"),
 							];
 							const container = new Container();
