@@ -97,8 +97,7 @@ class ShellSession {
 	private xterm: XTerm | null = null;
 	private tui: TUI | null = null;
 	private cols = 80;
-	private appKeys = false; // DECCKM (?1h) as requested by the shell
-	private modeProbe = "";
+	private emulatorOutput: { dispose(): void } | null = null;
 
 	start(tui: TUI): boolean {
 		this.tui = tui;
@@ -119,9 +118,15 @@ class ShellSession {
 		this.xterm = term;
 		this.proc = proc;
 		proc.onData((data: string) => {
-			this.trackKeypadMode(data);
 			term.write(data);
 			this.tui?.requestRender();
+		});
+		// Emulator-generated OUTPUT → back into the pty: replies to shell
+		// queries (cursor position ESC[6n, device attributes ESC[c, OSC
+		// queries). Without this loop shells hang/misrender on those.
+		this.emulatorOutput?.dispose();
+		this.emulatorOutput = term.onData((data: string) => {
+			proc.write(data);
 		});
 		proc.onExit(() => {
 			term.write("\r\n[shell exited — Ctrl+G close, /shell restarts]\r\n");
@@ -141,32 +146,24 @@ class ShellSession {
 	}
 
 	/**
-	 * Track the terminal keypad mode the SHELL requested through its output
-	 * stream: DECCKM (`ESC[?1h` application cursor keys on, `ESC[?1l` off).
-	 * Arrow/Home/End encodings differ between the two modes and the shell
-	 * (zsh ZLE) rejects mismatched sequences — printing fragments like
-	 * `:1C`/`:1D` instead of moving the cursor.
+	 * Translate pi key events to the canonical byte sequence the shell's
+	 * current keypad mode expects. DECCKM comes straight from the emulator:
+	 * `this.xterm.modes.applicationCursorKeysMode` is xterm.js's own parsed
+	 * SM/DECSET state (`CSI ? 1 h/l`) — no separate state machine needed.
+	 * Ordinary characters arrive raw and pass through unchanged.
 	 */
-	private trackKeypadMode(data: string): void {
-		this.modeProbe = (this.modeProbe + data).slice(-64);
-		const on = this.modeProbe.lastIndexOf("\x1b[?1h");
-		const off = this.modeProbe.lastIndexOf("\x1b[?1l");
-		if (on >= 0 && on > off) this.appKeys = true;
-		else if (off >= 0 && off > on) this.appKeys = false;
+	private keypadMode(): boolean {
+		return this.xterm?.modes.applicationCursorKeysMode ?? false;
 	}
 
-	/**
-	 * Translate pi key events to the canonical byte sequence the shell's
-	 * current keypad mode expects; returns null when `data` should be passed
-	 * through unchanged (ordinary characters arrive raw).
-	 */
 	private keyToBytes(data: string): string | null {
-		if (matchesKey(data, Key.up)) return this.appKeys ? "\x1bOA" : "\x1b[A";
-		if (matchesKey(data, Key.down)) return this.appKeys ? "\x1bOB" : "\x1b[B";
-		if (matchesKey(data, Key.right)) return this.appKeys ? "\x1bOC" : "\x1b[C";
-		if (matchesKey(data, Key.left)) return this.appKeys ? "\x1bOD" : "\x1b[D";
-		if (matchesKey(data, Key.home)) return this.appKeys ? "\x1bOH" : "\x1b[H";
-		if (matchesKey(data, Key.end)) return this.appKeys ? "\x1bOF" : "\x1b[F";
+		const app = this.keypadMode();
+		if (matchesKey(data, Key.up)) return app ? "\x1bOA" : "\x1b[A";
+		if (matchesKey(data, Key.down)) return app ? "\x1bOB" : "\x1b[B";
+		if (matchesKey(data, Key.right)) return app ? "\x1bOC" : "\x1b[C";
+		if (matchesKey(data, Key.left)) return app ? "\x1bOD" : "\x1b[D";
+		if (matchesKey(data, Key.home)) return app ? "\x1bOH" : "\x1b[H";
+		if (matchesKey(data, Key.end)) return app ? "\x1bOF" : "\x1b[F";
 		if (matchesKey(data, Key.delete)) return "\x1b[3~";
 		if (matchesKey(data, Key.insert)) return "\x1b[2~";
 		if (matchesKey(data, Key.backspace)) return "\x7f";
@@ -180,6 +177,15 @@ class ShellSession {
 
 	/** send data translated through keyToBytes */
 	sendKey(data: string): void {
+		// Bracketed paste: shell enables CSI ? 2004 h; the terminal must wrap
+		// pasted text in CSI 200~ / CSI 201~ so the shell buffers it instead
+		// of executing every newline. Heuristic: multi-char chunk that is not
+		// itself a single recognized key/escape sequence.
+		const bpm = this.xterm?.modes.bracketedPasteMode ?? false;
+		if (bpm && data.length > 1 && !data.startsWith("\x1b")) {
+			this.proc?.write(`\x1b[200~${data}\x1b[201~`);
+			return;
+		}
 		const bytes = this.keyToBytes(data) ?? data;
 		this.proc?.write(bytes);
 	}
@@ -193,6 +199,8 @@ class ShellSession {
 	}
 
 	kill(): void {
+		this.emulatorOutput?.dispose();
+		this.emulatorOutput = null;
 		if (!this.proc) return;
 		try {
 			this.proc.kill();
