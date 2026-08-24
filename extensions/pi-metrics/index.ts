@@ -15,7 +15,6 @@ import {
 	type TurnTelemetry,
 } from "../../shared/metrics.js";
 import {
-	calibrateTokS,
 	foldCalibration,
 	loadCalibration,
 } from "../../shared/calibration.js";
@@ -178,8 +177,10 @@ export default function piMetrics(pi: ExtensionAPI): void {
 				if (!current.speed.working) ctx.ui.setWorkingMessage();
 				return;
 			}
-			// Rescale the live estimate toward the authoritative tokenizer count.
-			renderWorking(ctx, calibrateTokS(tracker.liveTokS(), calibration));
+			// pi-web parity: the badge shows the raw cumulative estimate, no
+			// calibration rescale (calibration still feeds /pi-metrics-debug
+			// and finishMessage reconciliation).
+			renderWorking(ctx, tracker.liveTokS());
 		}, config.speed.renderIntervalMs);
 	}
 

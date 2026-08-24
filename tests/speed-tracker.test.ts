@@ -71,6 +71,7 @@ test("SpeedTracker: provider stream-end usage jump is not fed to live window", (
 	// Normal character deltas arrive over time.
 	now += 200;
 	tracker.recordDelta("hello world");
+	now += 600; // pi-web gate: badge appears only after 0.5s of content
 	const liveBefore = tracker.liveTokS();
 	now += 100;
 	// Provider final chunk reports the whole message usage (500 tokens).
@@ -81,7 +82,7 @@ test("SpeedTracker: provider stream-end usage jump is not fed to live window", (
 		"live speed should be non-null",
 	);
 	// Burst guard: the 500-token jump must not inflate live speed.
-	// (2 tokens over 0.3s ≈ 6.7 tok/s; without the guard it would be ~1667.)
+	// (~2.75 tokens over 0.7s ≈ 3.9 tok/s; without the guard it would be ~700.)
 	assert.ok(
 		liveAfter !== null && liveAfter < 100,
 		`live speed should stay sane (got ${liveAfter})`,

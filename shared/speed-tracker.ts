@@ -57,6 +57,19 @@ export function estimateTokensFromDelta(
 	return matches ? matches.length : 0;
 }
 
+// pi-web MessageView estimateTokens: CJK ~1 token each, other chars 4/token.
+const CJK_PATTERN = /[\u3000-\u30ff\u3400-\u9fff\uf900-\ufaff\u{20000}-\u{2fa1f}\uac00-\ud7af]/u;
+
+export function estimateWebTokens(text: string): number {
+	let cjk = 0;
+	let rest = 0;
+	for (const ch of text) {
+		if (CJK_PATTERN.test(ch)) cjk++;
+		else rest++;
+	}
+	return cjk + rest / 4;
+}
+
 export class TokenSpeedEngine {
 	private _isStreaming = false;
 	private _tokenCount = 0;
@@ -66,6 +79,10 @@ export class TokenSpeedEngine {
 	private _windowStartIndex = 0;
 	private _countedUsageOutput = 0;
 	private _lastStableTokS = 0;
+	/** pi-web semantic: elapsed since the FIRST token-carrying tick. */
+	private _firstTokenAt = 0;
+	/** pi-web cumulative count (CJK=1, chars/4) for the live badge only. */
+	private _webTokenCount = 0;
 
 	private options: EngineOptions;
 
@@ -118,11 +135,23 @@ export class TokenSpeedEngine {
 	}
 
 	get rawTokS(): number {
-		return this.avgTokS;
+		// pi-web MessageView semantics: cumulative estimate ÷ elapsed since
+		// the stream first produced content. Start is stamped on the first
+		// token-bearing update (streamStartRef in their tick).
+		if (this._firstTokenAt === 0) return 0;
+		const secs = (this.now() - this._firstTokenAt) / 1000;
+		return secs > 0 ? this._webTokenCount / secs : 0;
+	}
+
+	/** ms since the first token-carrying update (0 when none yet). */
+	firstContentAgeMs(): number {
+		if (this._firstTokenAt === 0) return 0;
+		return Math.max(0, this.now() - this._firstTokenAt);
 	}
 
 	start(): void {
 		this._tokenCount = 0;
+		this._webTokenCount = 0;
 		this._isStreaming = true;
 		this._startTime = this.now();
 		this._endTime = this._startTime;
@@ -130,6 +159,7 @@ export class TokenSpeedEngine {
 		this._windowStartIndex = 0;
 		this._countedUsageOutput = 0;
 		this._lastStableTokS = 0;
+		this._firstTokenAt = 0;
 	}
 
 	stop(): void {
@@ -157,10 +187,17 @@ export class TokenSpeedEngine {
 				return;
 			}
 			this.recordTokens(jump);
+			this._webTokenCount += jump;
+			if (this._firstTokenAt === 0) this._firstTokenAt = this.now();
 			this._countedUsageOutput = usageOutput;
 			return;
 		}
+		const webTokens = estimateWebTokens(delta);
 		this.recordTokens(estimateTokensFromDelta(delta, this.options.countStrategy));
+		this._webTokenCount += webTokens;
+		if (this._firstTokenAt === 0 && webTokens > 0) {
+			this._firstTokenAt = this.now();
+		}
 	}
 
 	reconcileTotal(tokens: number): void {
@@ -169,6 +206,7 @@ export class TokenSpeedEngine {
 
 	private recordTokens(tokens: number): void {
 		if (!this._isStreaming || tokens <= 0) return;
+		if (this._firstTokenAt === 0) this._firstTokenAt = this.now();
 		this._tokenCount += tokens;
 		this._events.push({ time: this.now(), tokens });
 		if (this._windowStartIndex >= 5000) this.compact();
@@ -225,11 +263,14 @@ export class SpeedTracker {
 		if (this.engine.isStreaming) this.engine.stop();
 	}
 
+	/** Live tok/s for the working indicator — pi-web MessageView semantics:
+	 * cumulative web-estimate tokens ÷ elapsed since first content, shown
+	 * only after 0.5s of content has streamed (their `elapsed > 0.5` gate). */
 	liveTokS(): number | null {
-		const windowed = this.engine.tokS; // sanitized sliding window
-		if (windowed > 0) return windowed;
-		const raw = this.engine.rawTokS; // pre-sanitize live value
-		if (raw > 0) return raw;
+		const engine = this.engine;
+		if (engine.firstContentAgeMs() < 500) return null;
+		const v = engine.rawTokS;
+		if (v > 0) return v;
 		return this.lastStableTokS;
 	}
 
