@@ -5,63 +5,9 @@ import {
 	SessionMetricsAccumulator,
 	cacheHitPercent,
 	sessionTokensPerSecond,
-	formatTokensPerSecond,
-	computeTurnTps,
 } from "../shared/metrics.ts";
 
-// ── computeTurnTps ──────────────────────────────────────────────────────────
-
-test("computeTurnTps: primary path uses decode window minus stalls", () => {
-	// 100 tokens over a 1s stream (1000ms), 20 updates, no stall.
-	const streamMs = 1000;
-	const updateCount = 20; // avg gap 1000/19 ≈ 52.6ms ≥ 1ms
-	const r = computeTurnTps({
-		outputTokens: 100,
-		streamMs,
-		updateCount,
-		stallMs: 0,
-		generationMs: 1200,
-	});
-	// 100 tokens / 1s = 100 tok/s
-	assert.ok(r.primary);
-	assert.ok(r.value !== null);
-	assert.ok(Math.abs(r.value! - 100) < 5);
-});
-
-test("computeTurnTps: buffer-flush burst → null (too few updates)", () => {
-	const r = computeTurnTps({
-		outputTokens: 500,
-		streamMs: 10, // 500 tokens in 10ms = implausible
-		updateCount: 2, // < 5 updates
-		stallMs: 0,
-		generationMs: 2000,
-	});
-	// fallback may still produce a value (generation-based), but primary=false
-	assert.equal(r.primary, false);
-	// volume gate: if fallback tps > 10000 → null
-	if (r.value !== null) assert.ok(r.value <= 10_000);
-});
-
-test("computeTurnTps: volume gate clamps implausible speed to null", () => {
-	const r = computeTurnTps({
-		outputTokens: 1_000_000,
-		streamMs: 10,
-		updateCount: 100,
-		stallMs: 0,
-		generationMs: 1000,
-	});
-	assert.equal(r.value, null);
-});
-
 // ── TurnMetricsAccumulator ──────────────────────────────────────────────────
-
-function makeTurn(count = 5): TurnMetricsAccumulator {
-	const acc = new TurnMetricsAccumulator(() => 0);
-	acc.startTurn();
-	for (let i = 0; i < count; i++) acc.onMessageUpdate(assistantLike, `tok ${i}`);
-	acc.onMessageEnd(assistantLikeWithUsage);
-	return acc;
-}
 
 const assistantLike = {
 	role: "assistant",
@@ -135,7 +81,7 @@ test("SessionMetricsAccumulator: tool wall time pairs call/result", () => {
 	assert.ok(Number.isFinite(acc.metrics.toolMs));
 });
 
-// ── cacheHitPercent / sessionTokensPerSecond / formatTokensPerSecond ────────
+// ── cacheHitPercent / sessionTokensPerSecond ───────────────────────────────
 
 test("cacheHitPercent: harness formula", () => {
 	const m = {
@@ -171,13 +117,6 @@ test("sessionTokensPerSecond: harness cumulative decode throughput", () => {
 	};
 	// 120 / 2s = 60 tok/s
 	assert.equal(sessionTokensPerSecond(m), 60);
-});
-
-test("formatTokensPerSecond: ≥10 integer, <10 one decimal", () => {
-	assert.equal(formatTokensPerSecond(144.7), "145");
-	assert.equal(formatTokensPerSecond(9.4), "9.4");
-	assert.equal(formatTokensPerSecond(0), "0");
-	assert.equal(formatTokensPerSecond(-1), "0");
 });
 
 // ── estimateTokensFromDelta chars strategy (regression) ────────────────────

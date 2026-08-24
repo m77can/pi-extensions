@@ -103,7 +103,6 @@ const COPY = {
 				"Prefer the model's reported token count over local estimation",
 			speedCountStrategy:
 				"Estimate = word-ish split · Direct = 1 per delta · Chars÷4 = text length ÷ 4",
-			tps: "Decode throughput = output tokens ÷ (decode time − stalls)",
 			ttft: "Time to first token from request start",
 			totalDuration: "Total wall time of the turn",
 			tokenCounts: "Input / output tokens for the turn",
@@ -202,7 +201,6 @@ const COPY = {
 			speedMaxDisplay: "超过这个速度视为异常并隐藏",
 			speedProviderTokens: "优先用模型上报的 token 数，而不是本地估算",
 			speedCountStrategy: "估算=词切分 · 直接=每个增量算 1 · 字符÷4=文本长度÷4",
-			tps: "解码吞吐 = 输出 token ÷（解码时间 − 停顿）",
 			ttft: "从请求开始到首个 token 的时间",
 			totalDuration: "本轮的总耗时",
 			tokenCounts: "本轮的输入 / 输出 token 数",
@@ -625,13 +623,6 @@ function buildTelemetryItems(
 			label: copy.labels.enabled,
 			currentValue: flag(telemetry.enabled),
 			description: d.enabled,
-			kind: "telemetry",
-		},
-		{
-			id: "tps",
-			label: "TPS",
-			currentValue: flag(telemetry.tps),
-			description: d.tps,
 			kind: "telemetry",
 		},
 		{

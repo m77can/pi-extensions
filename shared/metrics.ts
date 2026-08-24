@@ -6,30 +6,16 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
  *
  *   TTFT     = firstTokenTime − stepStartTime
  *   decodeMs = messageCompleteTime − firstTokenTime   (excludes TTFT)
- *   tok/s    = outputTokens / (decodeMs / 1000)
- *
- * The denominator semantics follow harness exactly. Because this extension runs
- * INSIDE the streaming process (unlike harness, which folds a settled log), we
- * additionally layer pi-tps' anti-buffer-flush gates so dispatch bursts don't
- * report fake 5000+ tok/s readings.
  */
 
 /** Gap between consecutive token updates above which we count a stall. */
 export const STALL_THRESHOLD_MS = 500;
-/** Maximum plausible inference speed; beyond this the reading is a measurement artifact. */
-export const MAX_PLAUSIBLE_TPS = 10_000;
 
 /** Per-turn accumulated facts, mirroring harness `StepReading` + pi-tps timing. */
 export interface TurnTiming {
 	turnStartMs: number;
 	/** Time of the first content-bearing update (effective first token). */
 	firstTokenMs: number | null;
-	/** Start of the inter-update streaming window (the update AFTER the first token). */
-	firstStreamUpdateMs: number | null;
-	/** Time of the most recent streaming update. */
-	lastStreamUpdateMs: number;
-	/** Number of streaming updates after the first token (pi-tps `updateCount`). */
-	updateCount: number;
 	/** Time of the last update, for stall detection. */
 	lastUpdateMs: number;
 	/** Message completion time (message_end). */
@@ -49,13 +35,10 @@ export interface TurnTiming {
 }
 
 export interface TurnTelemetry {
-	tps: number | null;
-	tpsPrimary: boolean;
 	ttftMs: number | null;
 	totalMs: number;
 	generationMs: number;
 	decodeMs: number | null;
-	streamMs: number | null;
 	stallMs: number;
 	stallCount: number;
 	inputTokens: number;
@@ -77,11 +60,6 @@ export interface SessionMetrics {
 	cacheRead: number;
 	cacheWrite: number;
 	uncachedInput: number;
-}
-
-function round(value: number, decimals: number): number {
-	const factor = 10 ** decimals;
-	return Math.round(value * factor) / factor;
 }
 
 /** Sum provider-reported usage across a turn's assistant messages. */
@@ -140,9 +118,6 @@ export class TurnMetricsAccumulator {
 		this.timing = {
 			turnStartMs: now,
 			firstTokenMs: null,
-			firstStreamUpdateMs: null,
-			lastStreamUpdateMs: now,
-			updateCount: 0,
 			lastUpdateMs: now,
 			messageEndMs: null,
 			generationMs: 0,
@@ -183,13 +158,6 @@ export class TurnMetricsAccumulator {
 			timing.lastUpdateMs = now;
 			return;
 		}
-
-		// Inter-update streaming window.
-		timing.updateCount++;
-		if (timing.firstStreamUpdateMs === null) {
-			timing.firstStreamUpdateMs = now;
-		}
-		timing.lastStreamUpdateMs = now;
 
 		const gap = now - timing.lastUpdateMs;
 		if (gap >= STALL_THRESHOLD_MS) {
@@ -236,27 +204,11 @@ export class TurnMetricsAccumulator {
 				? null
 				: Math.max(0, timing.messageEndMs - timing.firstTokenMs);
 
-		const streamMs =
-			timing.updateCount > 0 && timing.firstStreamUpdateMs !== null
-				? timing.lastStreamUpdateMs - timing.firstStreamUpdateMs
-				: null;
-
-		const tps = computeTurnTps({
-			outputTokens: usage.output,
-			streamMs,
-			updateCount: timing.updateCount,
-			stallMs: timing.stallMs,
-			generationMs: timing.generationMs,
-		});
-
 		return {
-			tps: tps.value,
-			tpsPrimary: tps.primary,
 			ttftMs,
 			totalMs,
 			generationMs: timing.generationMs,
 			decodeMs,
-			streamMs,
 			stallMs: timing.stallMs,
 			stallCount: timing.stallCount,
 			inputTokens: usage.input,
@@ -270,64 +222,6 @@ export class TurnMetricsAccumulator {
 
 function timingMessageStart(t: TurnTiming): boolean {
 	return t.messageStartMs !== null;
-}
-
-const MIN_STREAM_MS = 1;
-const MIN_STREAM_UPDATES = 5;
-const MIN_INTER_CHUNK_MS = 1;
-const MIN_GENERATION_MS = 200;
-
-/**
- * Compute per-turn TPS with harness decode-denominator semantics layered with
- * pi-tps anti-buffer-flush gates.
- *
- * Primary path: output / ((decodeMs − stallMs) / 1000), gated by
- *   - ≥ MIN_STREAM_UPDATES updates
- *   - avg inter-chunk gap ≥ MIN_INTER_CHUNK_MS
- *   - stall doesn't dominate the window
- *   - effective window ≥ MIN_GENERATION_MS
- * Fallback path: output / ((generationMs − stallMs) / 1000) — includes TTFT,
- *   intentionally lower.
- * Guard: tps > MAX_PLAUSIBLE_TPS → null.
- */
-export function computeTurnTps(input: {
-	outputTokens: number;
-	streamMs: number | null;
-	updateCount: number;
-	stallMs: number;
-	generationMs: number;
-}): { value: number | null; primary: boolean } {
-	const { outputTokens, streamMs, updateCount, stallMs, generationMs } = input;
-
-	const avgInterChunkGap =
-		streamMs !== null && updateCount > 1 ? streamMs / (updateCount - 1) : 0;
-
-	let tps: number | null = null;
-	let primary = false;
-
-	if (
-		streamMs !== null &&
-		streamMs >= MIN_STREAM_MS &&
-		updateCount >= MIN_STREAM_UPDATES &&
-		avgInterChunkGap >= MIN_INTER_CHUNK_MS &&
-		stallMs < streamMs &&
-		streamMs - stallMs >= MIN_GENERATION_MS &&
-		stallMs < streamMs - stallMs
-	) {
-		const effectiveStreamMs = streamMs - stallMs;
-		tps = round(outputTokens / (effectiveStreamMs / 1000), 1);
-		primary = true;
-	} else if (updateCount >= 2 && generationMs >= MIN_GENERATION_MS) {
-		const effectiveGenMs = Math.max(generationMs - stallMs, MIN_GENERATION_MS);
-		tps = round(outputTokens / (effectiveGenMs / 1000), 1);
-	}
-
-	if (tps !== null && tps > MAX_PLAUSIBLE_TPS) {
-		tps = null;
-		primary = false;
-	}
-
-	return { value: tps, primary };
 }
 
 /**
@@ -468,10 +362,4 @@ export function sessionTokensPerSecond(m: SessionMetrics): number | null {
 	return m.decodeTokens / (m.decodeMs / 1000);
 }
 
-/** harness format: ≥10 → integer, <10 → one decimal. */
-export function formatTokensPerSecond(tps: number): string {
-	const clamped = Math.max(0, tps);
-	return clamped >= 10
-		? String(Math.round(clamped))
-		: String(Math.round(clamped * 10) / 10);
-}
+

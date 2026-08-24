@@ -48,13 +48,6 @@ function formatSpeed(label: string, speed: number | null): string {
 }
 
 /** harness format: ≥10 → integer, <10 → one decimal. */
-function formatTokensPerSecond(tps: number): string {
-	const clamped = Math.max(0, tps);
-	return clamped >= 10
-		? String(Math.round(clamped))
-		: String(Math.round(clamped * 10) / 10);
-}
-
 function formatTurnDuration(ms: number): string {
 	if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
 	const whole = Math.round(ms / 1000);
@@ -67,7 +60,6 @@ export function formatTurnTelemetry(
 	config: {
 		telemetry: {
 			enabled: boolean;
-			tps: boolean;
 			ttft: boolean;
 			duration: boolean;
 			tokens: boolean;
@@ -79,18 +71,6 @@ export function formatTurnTelemetry(
 	const glyphs = resolveGlyphs(iconMode);
 	const t = config.telemetry;
 	const parts: string[] = [];
-	if (t.tps) {
-		const value =
-			telemetry.tps === null
-				? "—"
-				: `${formatTokensPerSecond(telemetry.tps)} tok/s`;
-		parts.push(
-			theme.fg(
-				telemetry.tps === null ? "muted" : "accent",
-				`${glyphs.speed} TPS ${value}`,
-			),
-		);
-	}
 	if (t.ttft && telemetry.ttftMs !== null) {
 		parts.push(
 			theme.fg(

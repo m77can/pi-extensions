@@ -38,7 +38,6 @@ export interface FooterSegments {
 
 export interface TelemetryConfig {
 	enabled: boolean;
-	tps: boolean;
 	ttft: boolean;
 	duration: boolean;
 	tokens: boolean;
@@ -105,7 +104,6 @@ export const DEFAULT_CONFIG: PiTuiConfig = {
 	},
 	telemetry: {
 		enabled: true,
-		tps: true,
 		ttft: true,
 		duration: true,
 		tokens: true,
