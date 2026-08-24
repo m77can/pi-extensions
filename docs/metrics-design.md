@@ -36,13 +36,14 @@ Pi 的事件模型足以复刻 harness 的 step 边界语义：
 | `tool/result` | `tool_execution_end`（toolCallId 配对） |
 | `step/end` | `turn_end` |
 
-## 3. tok/s 三层口径（分层，不打架）
+## 3. tok/s 口径（分层，不打架）
 
 | 层 | 时机 | 口径 | 分子 | 分母 |
 | --- | --- | --- | --- | --- |
-| **实时** | 流式 working indicator | 滑动窗口估计 | `chars÷4`（或 `usage.output` delta） | 窗口 wall time（1s 窗） |
-| **单轮** | `turn_end` 后 notify | harness decode 吞吐 | `usage.output` | `decodeMs = messageEnd − firstToken`（排除 TTFT），再减 stall |
+| **实时** | 流式 working indicator | pi-web 同款累计平均 | `CJK=1/其余 chars÷4` 估算 | 首个内容 delta 起计 elapsed |
 | **累计** | footer 常驻 | harness 全 session 折合 | `Σ usage.output` | `Σ decodeMs` |
+
+（原“单轮 decode 吞吐 TPS”层已移除——stall 剔除口径读数失真，见 v0.2.x）
 
 三者关系：数字可能不同，但**口径一致**（都是 decode 吞吐），只是时间窗粒度不同。文案上以 `实时 / 本轮 / 累计` 前缀区分。
 
@@ -50,14 +51,16 @@ Pi 的事件模型足以复刻 harness 的 step 边界语义：
 
 ### 现状问题
 
-- `pi-speed` 和 `pi-telemetry` 是两个模块，都各自监听 message 事件，功能重叠（实时速度 vs settled TPS）。
+- `pi-speed` 和 `pi-telemetry` 是两个模块，都各自监听 message 事件，功能重叠。
 - `pi-footer` 的 speed segment 用的是 `SpeedTracker.sessionAvgTokS()`（`Σ output / Σ stream elapsed`），这个分母含 TTFT，不是 harness 口径。
+
+（TPS 单轮 decode 吞吐曾在 pi-metrics 实现过，因读数失真已于 v0.2.x 移除。）
 
 ### 方案：合并 pi-speed + pi-telemetry → `pi-metrics`
 
 | 模块 | 职责 |
 | --- | --- |
-| **`pi-metrics`**（新，替代 pi-speed + pi-telemetry） | ① 实时 working indicator；② `turn_end` 单轮 notify；③ 喂累计 metrics 进 store 供 footer 读 |
+| **`pi-metrics`**（新，替代 pi-speed + pi-telemetry） | ① 实时 working indicator（pi-web 同款累计平均）；② `turn_end` 单轮 notify（TTFT/耗时/tokens/stall）；③ 喂累计 metrics 进 store 供 footer 读 |
 | **`pi-footer`**（改） | speed segment 从 store 读累计 decode 吞吐 + 缓存命中 % |
 
 删除 `pi-speed/`、`pi-telemetry/` 两个目录。
