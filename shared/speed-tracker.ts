@@ -107,7 +107,9 @@ export class TokenSpeedEngine {
 		return value;
 	}
 
-	/** Sliding-window tok/s; suppresses unreliable burst-only readings. */
+	/** Live tok/s — cumulative average (total tokens ÷ total elapsed), matching
+	 * pi-web's streaming badge (tokens count includes thinking; elapsed starts
+	 * at message_start, so thinking time is included in the denominator). */
 	get tokS(): number {
 		const candidate = this.rawTokS;
 		const stable = this.sanitizeTokS(candidate);
@@ -116,28 +118,7 @@ export class TokenSpeedEngine {
 	}
 
 	get rawTokS(): number {
-		const now = this.now();
-		if (this.elapsedMs < this.options.slidingWindowMs) return this.avgTokS;
-		if (!this._isStreaming) return this.avgTokS;
-
-		const windowStart = now - this.options.slidingWindowMs;
-		while (
-			this._windowStartIndex < this._events.length &&
-			this._events[this._windowStartIndex].time < windowStart
-		) {
-			this._windowStartIndex++;
-		}
-		if (this._windowStartIndex >= this._events.length) return this.avgTokS;
-
-		let windowTokenCount = 0;
-		for (let i = this._windowStartIndex; i < this._events.length; i++) {
-			windowTokenCount += this._events[i].tokens;
-		}
-		if (windowTokenCount === 0) return this.avgTokS;
-
-		const windowDuration =
-			(now - this._events[this._windowStartIndex].time) / 1000;
-		return windowDuration > 0 ? windowTokenCount / windowDuration : 0;
+		return this.avgTokS;
 	}
 
 	start(): void {
