@@ -62,6 +62,10 @@ function extractTool(
 		) {
 			return entry;
 		}
+		// 新 pi Responses 风格: 平铺 { type, name, description, parameters }
+		if (entry.name === toolName && typeof entry.parameters === "object") {
+			return entry;
+		}
 	}
 	return undefined;
 }
@@ -101,6 +105,17 @@ function rewriteForRecon(
 			userMessages.unshift({ role: "system", content: reconSys });
 		}
 		recon.messages = userMessages;
+	}
+
+	// 3b) 新 pi Responses 风格：消息在 `input` 数组（system 也是其中一员）
+	if (Array.isArray(recon.input)) {
+		const userMessages = (
+			recon.input as Array<Record<string, unknown>>
+		).filter((m) => m.role === "user");
+		if (typeof recon.system !== "string") {
+			userMessages.unshift({ role: "system", content: reconSys });
+		}
+		recon.input = userMessages;
 	}
 
 	// 4) 防御：tool_choice 钉死在其他工具上时强制回 auto
