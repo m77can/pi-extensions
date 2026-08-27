@@ -93,16 +93,44 @@ class LinesComponent implements Component {
 export class PiEditor extends CustomEditor {
 	private cursorStyle: CursorStyle;
 	private previewHardwareCursor = false;
+	private enterInsertsCompletion: boolean;
+	private readonly keybindingsManager: KeybindingsManager;
 
 	constructor(
 		tui: TUI,
 		editorTheme: EditorTheme,
 		keybindings: KeybindingsManager,
 		cursorStyle: CursorStyle = "block",
+		enterInsertsCompletion = true,
 	) {
 		super(tui, editorTheme, keybindings, { paddingX: 0 });
 		this.cursorStyle = cursorStyle;
+		this.enterInsertsCompletion = enterInsertsCompletion;
+		this.keybindingsManager = keybindings;
 		configureCursor(tui, cursorStyle);
+	}
+
+	/**
+	 * Upstream `Editor` treats Enter (tui.select.confirm) on an open
+	 * autocomplete popup as "apply + immediately submit" when the completion
+	 * prefix starts with "/" (slash command / skill). Route that keystroke
+	 * through Tab instead, which applies the selection and keeps the editor
+	 * open so arguments can be typed afterwards.
+	 */
+	override handleInput(data: string): void {
+		if (
+			this.enterInsertsCompletion &&
+			this.isShowingAutocomplete() &&
+			this.keybindingsManager.matches(data, "tui.select.confirm")
+		) {
+			super.handleInput("\t");
+			return;
+		}
+		super.handleInput(data);
+	}
+
+	setEnterInsertsCompletion(enterInsertsCompletion: boolean): void {
+		this.enterInsertsCompletion = enterInsertsCompletion;
 	}
 
 	override setPaddingX(_padding: number): void {
@@ -179,12 +207,14 @@ export function installEditor(
 	ctx: ExtensionContext,
 	cursorStyle: CursorStyle = "block",
 	wheelScrollLines = DEFAULT_FULLSCREEN_WHEEL_SCROLL_LINES,
+	enterInsertsCompletion = true,
 ) {
 	let activeTui: TUI | undefined;
 	let activeEditor: PiEditor | undefined;
 	let previousHardwareCursor: boolean | undefined;
 	let currentCursorStyle = cursorStyle;
 	let currentWheelScrollLines = wheelScrollLines;
+	let currentEnterInsertsCompletion = enterInsertsCompletion;
 
 	ctx.ui.setEditorComponent((tui, editorTheme, keybindings) => {
 		activeTui = tui;
@@ -195,6 +225,7 @@ export function installEditor(
 			editorTheme,
 			keybindings,
 			currentCursorStyle,
+			currentEnterInsertsCompletion,
 		);
 		return activeEditor;
 	});
@@ -207,6 +238,10 @@ export function installEditor(
 			currentWheelScrollLines = nextWheelScrollLines;
 			if (activeTui)
 				applyFullscreenWheelScrollLines(activeTui, currentWheelScrollLines);
+		},
+		setEnterInsertsCompletion(nextEnterInsertsCompletion: boolean): void {
+			currentEnterInsertsCompletion = nextEnterInsertsCompletion;
+			activeEditor?.setEnterInsertsCompletion(nextEnterInsertsCompletion);
 		},
 		cleanup(): void {
 			ctx.ui.setEditorComponent(undefined);
@@ -246,6 +281,7 @@ export default function (pi: ExtensionAPI): void {
 				ctx,
 				c.cursorStyle,
 				c.fullscreen.wheelScrollLines,
+				c.autocompleteEnterInserts,
 			);
 			setEditorControls(controls);
 		}
@@ -259,6 +295,7 @@ export default function (pi: ExtensionAPI): void {
 		const c = getConfig();
 		controls?.setCursorStyle(c.cursorStyle);
 		controls?.setWheelScrollLines(c.fullscreen.wheelScrollLines);
+		controls?.setEnterInsertsCompletion(c.autocompleteEnterInserts);
 	});
 
 	pi.on("session_shutdown", () => {

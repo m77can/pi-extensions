@@ -85,6 +85,7 @@ const COPY = {
 			tokenCounts: "Token counts",
 			stallDetails: "Stall details",
 			routerSpec: "Router spec (recon mode)",
+			autocompleteEnterInserts: "Enter inserts completion",
 			chrome: "Rounded system panels",
 			ask: "Questionnaire tool",
 			speedEnabled: "Live speed enabled",
@@ -123,6 +124,8 @@ const COPY = {
 
 			extensionStatuses: "Status line from other loaded extensions",
 			routerSpec: "First-round read+bash recon before full continuation",
+			autocompleteEnterInserts:
+				"With the /-command or skill popup open, Enter applies the selection without submitting, so you can keep typing arguments",
 			chrome:
 				"Round the kernel panels (changelog/reload/settings) with ╭─ corners",
 			ask: "Registers the ask_user_question tool with our rounded questionnaire UI",
@@ -186,6 +189,7 @@ const COPY = {
 			tokenCounts: "Token 数量",
 			stallDetails: "停顿详情",
 			routerSpec: "Router spec（侦察模式）",
+			autocompleteEnterInserts: "Enter 仅插入补全",
 			chrome: "系统面板圆角",
 			ask: "提问问卷",
 			speedEnabled: "实时速度启用",
@@ -221,6 +225,8 @@ const COPY = {
 
 			extensionStatuses: "其他已加载扩展的状态行",
 			routerSpec: "首轮 read+bash 侦察，再全量续跑",
+			autocompleteEnterInserts:
+				"命令/skill 补全弹窗打开时，Enter 只插入选中项不提交，可继续补充参数",
 			chrome: "用 ╭─ 圆角替换内核面板（changelog/reload/设置）的横线",
 			ask: "注册 ask_user_question 工具，用圆角问卷界面提问",
 		},
@@ -309,6 +315,13 @@ function toggleAsk(config: PiTuiConfig): PiTuiConfig {
 
 function toggleChrome(config: PiTuiConfig): PiTuiConfig {
 	return { ...config, chrome: !config.chrome };
+}
+
+function toggleAutocompleteEnterInserts(config: PiTuiConfig): PiTuiConfig {
+	return {
+		...config,
+		autocompleteEnterInserts: !config.autocompleteEnterInserts,
+	};
 }
 
 function cycleCursorStyle(config: PiTuiConfig): PiTuiConfig {
@@ -429,6 +442,14 @@ function buildFeaturesItems(
 			label: copy.labels.wheelScrollLines,
 			currentValue: copy.values.wheelLines(config.fullscreen.wheelScrollLines),
 			description: d.wheelScrollLines,
+		},
+		{
+			id: "autocompleteEnterInserts",
+			label: copy.labels.autocompleteEnterInserts,
+			currentValue: config.autocompleteEnterInserts
+				? copy.values.on
+				: copy.values.off,
+			description: d.autocompleteEnterInserts,
 		},
 		{
 			id: "routerSpec",
@@ -704,6 +725,8 @@ function handleSettingChange(
 		if (itemId === "enabled") return toggleEnabled(config);
 		if (itemId === "settingsLanguage") return toggleLanguage(config);
 		if (itemId === "wheelScrollLines") return cycleWheelScrollLines(config);
+		if (itemId === "autocompleteEnterInserts")
+			return toggleAutocompleteEnterInserts(config);
 		if (itemId === "routerSpec") return toggleRouterSpec(config);
 		if (itemId === "ask") return toggleAsk(config);
 	}
@@ -1010,6 +1033,11 @@ export function registerSettingsCommand(pi: ExtensionAPI): void {
 						next.fullscreen.wheelScrollLines !== prev.fullscreen.wheelScrollLines
 					) {
 						controls?.setWheelScrollLines(next.fullscreen.wheelScrollLines);
+					}
+					if (next.autocompleteEnterInserts !== prev.autocompleteEnterInserts) {
+						controls?.setEnterInsertsCompletion(
+							next.autocompleteEnterInserts,
+						);
 					}
 				},
 				() => done(undefined),

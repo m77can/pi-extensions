@@ -66,6 +66,8 @@ export interface PiTuiConfig {
 	enabled: boolean;
 	settingsLanguage: SettingsLanguage;
 	cursorStyle: CursorStyle;
+	/** When the autocomplete popup is open, Enter inserts the selection without submitting (so you can keep typing arguments). */
+	autocompleteEnterInserts: boolean;
 	fullscreen: FullscreenConfig;
 	icons: { mode: IconMode };
 	chrome: boolean;
@@ -79,6 +81,7 @@ export const DEFAULT_CONFIG: PiTuiConfig = {
 	enabled: true,
 	settingsLanguage: "zh",
 	cursorStyle: "block",
+	autocompleteEnterInserts: true,
 	fullscreen: { wheelScrollLines: DEFAULT_FULLSCREEN_WHEEL_SCROLL_LINES },
 	icons: { mode: "auto" },
 	chrome: true,
@@ -169,6 +172,9 @@ function normalizeConfig(config: PiTuiConfig): PiTuiConfig {
 		config.cursorStyle !== "underline"
 	) {
 		config.cursorStyle = DEFAULT_CONFIG.cursorStyle;
+	}
+	if (typeof config.autocompleteEnterInserts !== "boolean") {
+		config.autocompleteEnterInserts = DEFAULT_CONFIG.autocompleteEnterInserts;
 	}
 	config.fullscreen.wheelScrollLines = normalizeFullscreenWheelScrollLines(
 		config.fullscreen.wheelScrollLines,

@@ -29,6 +29,7 @@ interface PiTuiStore {
 		| {
 				setCursorStyle: (style: PiTuiConfig["cursorStyle"]) => void;
 				setWheelScrollLines: (lines: number) => void;
+				setEnterInsertsCompletion: (enabled: boolean) => void;
 		  }
 		| undefined;
 }
